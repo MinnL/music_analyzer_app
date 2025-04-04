@@ -5,20 +5,28 @@ A web application that captures real-time audio input, analyzes and classifies m
 ## Features
 
 - **Real-Time Audio Input**: Capture audio from your microphone with low latency
+- **Audio File Upload**: Upload and analyze your own audio files in various formats (WAV, MP3, OGG, FLAC, M4A)
 - **Music Genre Classification**: Identify music genres using audio analysis
 - **Musical Component Analysis**: Decompose audio into rhythm, melody, and instrumentation components
 - **Interactive Visualizations**: View real-time, interactive visualizations of musical features
 - **Detailed Component Descriptions**: Explore in-depth information about musical elements
+- **Demo Mode**: If microphone access fails, the app automatically switches to a demo mode
 
 ## Installation
 
 1. Clone this repository:
    ```
-   git clone [repository-url]
+   git clone https://github.com/MinnL/music_analyzer_app.git
    cd music_analyzer_app
    ```
 
-2. Install the required dependencies:
+2. Create a virtual environment (recommended):
+   ```
+   python -m venv music_analyzer_env
+   source music_analyzer_env/bin/activate  # On Windows: music_analyzer_env\Scripts\activate
+   ```
+
+3. Install the required dependencies:
    ```
    pip install -r requirements.txt
    ```
@@ -38,31 +46,51 @@ A web application that captures real-time audio input, analyzes and classifies m
 
 2. Open your web browser and navigate to:
    ```
-   http://localhost:8050
+   http://127.0.0.1:8050
    ```
 
-3. Click the "Start Recording" button to begin capturing audio from your microphone.
+3. You have two options for analyzing music:
 
-4. Play or perform music, and watch as the application:
-   - Classifies the genre of the music
-   - Displays real-time visualizations of the rhythm, melody, and instrumentation
-   - Updates the analysis as the music changes
+   **Option 1: Microphone Input**
+   - Click the "Start Recording" button to begin capturing audio from your microphone
+   - Play or perform music, and watch the real-time analysis
+   - Click "Stop Recording" when finished
 
-5. Click on different parts of the visualizations to view detailed information about specific musical components.
+   **Option 2: Upload an Audio File**
+   - In the "Audio Input Controls" section, use the upload area to drag and drop an audio file or click to select one
+   - Supported formats: WAV, MP3, OGG, FLAC, M4A
+   - The application will automatically analyze the uploaded file and display the results
 
-6. Click "Stop Recording" when finished.
+4. View the analysis results:
+   - See the detected genre at the top of the page
+   - Explore the rhythm, melody, and instrumentation visualizations
+   - Click on different elements of the visualizations to see detailed information about specific musical components
+
+5. If you encounter issues with microphone access (common on macOS), the app will automatically switch to demo mode, allowing you to still test the visualizations.
+
+## Troubleshooting
+
+### Microphone Access Issues
+- On macOS, you may see PortAudio errors. This is a known issue with PyAudio on Mac systems.
+- The app will automatically fall back to demo mode, which simulates audio input.
+- You can still use the file upload feature to analyze your own music files.
+
+### File Upload Problems
+- Ensure your audio file is in one of the supported formats (WAV, MP3, OGG, FLAC, M4A)
+- Large files may take longer to process
+- If the app becomes unresponsive, try refreshing the page
 
 ## System Requirements
 
 - Python 3.8 or higher
-- A working microphone
+- A working microphone (optional, as you can use file upload)
 - Modern web browser (Chrome, Firefox, Safari, or Edge)
 
 ## Technical Architecture
 
 The application consists of several key components:
 
-1. **Audio Input Module**: Captures real-time audio from the microphone using PyAudio
+1. **Audio Input Module**: Captures real-time audio from the microphone using PyAudio or processes uploaded audio files
 2. **Analysis Module**: Processes audio data, extracts features, and classifies genres using librosa and machine learning models
 3. **Visualization Module**: Creates interactive visualizations using Plotly
 4. **Web Interface**: Built with Dash, providing a responsive and interactive user experience
