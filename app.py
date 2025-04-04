@@ -6,6 +6,7 @@ import numpy as np
 import base64
 from io import BytesIO
 import os
+import json
 
 from app.audio_input import AudioInput
 from app.analysis import MusicAnalyzer
@@ -13,7 +14,10 @@ from app.visualization import create_rhythm_visualization, create_melody_visuali
 
 # Initialize Dash app
 app = dash.Dash(__name__, 
-                external_stylesheets=[dbc.themes.BOOTSTRAP],
+                external_stylesheets=[
+                    dbc.themes.BOOTSTRAP,
+                    'https://use.fontawesome.com/releases/v5.15.4/css/all.css'
+                ],
                 assets_folder='app/static')
 server = app.server
 
@@ -75,7 +79,24 @@ app.layout = dbc.Container([
                         color="info",
                         is_open=False,
                         className="mt-3"
-                    )
+                    ),
+                    # Add audio playback section
+                    dbc.Row([
+                        dbc.Col([
+                            html.Div([
+                                dbc.Button(
+                                    [html.I(className="fas fa-play me-1"), "Play Audio"], 
+                                    id="play-button", 
+                                    color="primary", 
+                                    className="mt-3",
+                                    disabled=True
+                                ),
+                                html.Div(id="playback-info", className="mt-2 text-muted fst-italic")
+                            ], id="playback-controls", className="d-flex flex-column align-items-center"),
+                            # Hidden audio component
+                            html.Div(id="audio-player-container", className="mt-3 text-center")
+                        ], width=12)
+                    ])
                 ])
             ])
         ], width=12)
@@ -135,6 +156,7 @@ app.layout = dbc.Container([
     dcc.Store(id="audio-data"),
     dcc.Store(id="demo-mode-store", data=False),
     dcc.Store(id="file-mode-store", data=False),
+    dcc.Store(id="audio-playback-data", data=None),
     dcc.Interval(id="update-interval", interval=1000, n_intervals=0, disabled=True)
 ], fluid=True)
 
@@ -200,7 +222,8 @@ def process_uploaded_file(contents, filename):
      Output("genre-confidence", "children"),
      Output("rhythm-graph", "figure"),
      Output("melody-graph", "figure"),
-     Output("instrumentation-graph", "figure")],
+     Output("instrumentation-graph", "figure"),
+     Output("play-button", "disabled")],
     [Input("update-interval", "n_intervals")],
     [State("file-mode-store", "data")],
     prevent_initial_call=True
@@ -210,7 +233,7 @@ def update_analysis(n_intervals, file_mode):
     audio_data = audio_input.get_latest_data()
     
     if audio_data is None or len(audio_data) == 0:
-        return "No data", "", go.Figure(), go.Figure(), go.Figure()
+        return "No data", "", go.Figure(), go.Figure(), go.Figure(), True
     
     # Analyze audio
     genre, confidence, components = music_analyzer.analyze(audio_data)
@@ -230,7 +253,61 @@ def update_analysis(n_intervals, file_mode):
     else:
         genre_display = genre
     
-    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig
+    # Enable play button if we have audio data
+    play_button_disabled = False
+    
+    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, play_button_disabled
+
+@callback(
+    [Output("audio-playback-data", "data"),
+     Output("playback-info", "children")],
+    [Input("play-button", "n_clicks"),
+     Input("stop-button", "n_clicks")],
+    [State("audio-playback-data", "data")],
+    prevent_initial_call=True
+)
+def prepare_audio_playback(play_clicks, stop_clicks, current_playback_data):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return None, ""
+    
+    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    
+    # If stop button is clicked, save the current audio
+    if triggered_id == "stop-button":
+        audio_input.save_current_audio()
+        return None, ""
+    
+    # If play button is clicked, get audio for playback
+    if triggered_id == "play-button":
+        playback_data = audio_input.get_audio_for_playback()
+        if playback_data:
+            info_text = f"Playing {playback_data['source']} ({playback_data['duration']:.2f} seconds)"
+            return playback_data, info_text
+        else:
+            return None, "No audio available for playback"
+            
+    return current_playback_data, ""
+
+@callback(
+    Output("audio-player-container", "children"),
+    [Input("audio-playback-data", "data")],
+    prevent_initial_call=True
+)
+def update_audio_player(playback_data):
+    if not playback_data or "data" not in playback_data:
+        return []
+    
+    # Create an HTML audio element
+    audio_player = html.Audio(
+        id="audio-player",
+        src=playback_data["data"],
+        controls=True,
+        autoPlay=True,
+        className="w-100"
+    )
+    
+    return [audio_player]
 
 @callback(
     Output("component-details", "children"),

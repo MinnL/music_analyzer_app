@@ -9,6 +9,8 @@ import warnings
 import librosa
 import io
 import base64
+import soundfile as sf
+import tempfile
 
 class AudioInput:
     """
@@ -53,6 +55,10 @@ class AudioInput:
         self.file_audio_data = None
         self.file_info = None
         
+        # Add saved audio buffer for playback
+        self.saved_audio_data = None
+        self.audio_source = None  # 'recording', 'file', or 'demo'
+        
         # Buffer to store audio chunks
         self.buffer = queue.Queue(maxsize=buffer_size)
         
@@ -96,6 +102,7 @@ class AudioInput:
             print("No audio devices available. Starting in demo mode.")
             self.demo_mode = True
             self.is_recording = True
+            self.audio_source = 'demo'
             
             # Start a thread to simulate audio input
             self.thread = threading.Thread(target=self._generate_demo_audio)
@@ -119,6 +126,7 @@ class AudioInput:
                 )
                 
                 self.is_recording = True
+                self.audio_source = 'recording'
                 print(f"Successfully opened audio device: {device['name']}")
                 return
             except Exception as e:
@@ -131,6 +139,7 @@ class AudioInput:
         print("All audio devices failed. Starting in demo mode.")
         self.demo_mode = True
         self.is_recording = True
+        self.audio_source = 'demo'
         
         # Start a thread to simulate audio input
         self.thread = threading.Thread(target=self._generate_demo_audio)
@@ -175,11 +184,15 @@ class AudioInput:
             # Store the audio data
             self.file_audio_data = audio_data
             self.file_mode = True
+            self.audio_source = 'file'
             self.file_info = {
                 'filename': filename,
                 'duration': len(audio_data) / self.sample_rate,
                 'sample_rate': self.sample_rate
             }
+            
+            # Store a copy for playback
+            self.saved_audio_data = audio_data.copy()
             
             return True, f"Successfully loaded audio file: {filename} ({self.file_info['duration']:.2f} seconds)"
             
@@ -189,6 +202,10 @@ class AudioInput:
         
     def _generate_demo_audio(self):
         """Generate sample audio data for demo mode"""
+        # Initialize cumulative buffer for saving the demo audio
+        cumulative_audio = np.array([], dtype=np.float32)
+        cumulative_max_size = 10 * self.sample_rate  # 10 seconds max
+        
         while self.is_recording:
             # Generate a simple sine wave as a demo
             t = np.arange(0, self.chunk_size) / self.sample_rate
@@ -206,6 +223,12 @@ class AudioInput:
             # Normalize
             audio_data = audio_data / np.max(np.abs(audio_data))
             
+            # Add to the cumulative buffer
+            cumulative_audio = np.append(cumulative_audio, audio_data)
+            # Keep only the last N seconds for memory management
+            if len(cumulative_audio) > cumulative_max_size:
+                cumulative_audio = cumulative_audio[-cumulative_max_size:]
+            
             # Put data in buffer, discard if buffer is full
             try:
                 self.buffer.put_nowait(audio_data)
@@ -218,12 +241,20 @@ class AudioInput:
                     
             # Sleep to simulate real-time
             time.sleep(self.chunk_size / self.sample_rate)
+            
+            # Periodically update the saved audio for playback
+            if len(cumulative_audio) >= self.sample_rate * 3:  # Save at least 3 seconds
+                self.saved_audio_data = cumulative_audio.copy()
         
     def stop_recording(self):
         """Stop recording audio"""
         if not self.is_recording:
             return
         
+        # Save the current audio for playback before stopping
+        if not self.file_mode:
+            self.save_current_audio()
+            
         self.is_recording = False
         self.demo_mode = False
         
@@ -293,6 +324,68 @@ class AudioInput:
             
         # Concatenate chunks
         return np.concatenate(chunks)
+    
+    def save_current_audio(self):
+        """Save the current audio data for playback"""
+        if self.file_mode and self.file_audio_data is not None:
+            # For file mode, we already have the data saved
+            self.saved_audio_data = self.file_audio_data.copy()
+            return True
+            
+        # For recording or demo mode, get the latest accumulated data
+        audio_data = self.get_latest_data(seconds=10)  # Get up to 10 seconds
+        
+        if len(audio_data) == 0:
+            return False
+            
+        self.saved_audio_data = audio_data.copy()
+        return True
+    
+    def get_audio_for_playback(self):
+        """
+        Get the saved audio data for playback in a browser-friendly format
+        
+        Returns:
+            Dictionary with audio metadata and base64-encoded WAV data
+        """
+        if self.saved_audio_data is None or len(self.saved_audio_data) == 0:
+            return None
+            
+        try:
+            # Create a temporary file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                temp_path = temp_file.name
+                
+            # Write the audio data to the temporary file
+            sf.write(temp_path, self.saved_audio_data, self.sample_rate, format='WAV')
+            
+            # Read the file and encode to base64
+            with open(temp_path, 'rb') as f:
+                encoded_audio = base64.b64encode(f.read()).decode('utf-8')
+                
+            # Clean up the temporary file
+            os.unlink(temp_path)
+            
+            # Create metadata
+            duration = len(self.saved_audio_data) / self.sample_rate
+            
+            # Create source description
+            if self.audio_source == 'file' and self.file_info is not None:
+                source = f"File: {self.file_info['filename']}"
+            elif self.audio_source == 'demo':
+                source = "Demo Audio"
+            else:
+                source = "Recorded Audio"
+                
+            return {
+                'data': f"data:audio/wav;base64,{encoded_audio}",
+                'duration': duration,
+                'source': source
+            }
+                
+        except Exception as e:
+            print(f"Error preparing audio for playback: {e}")
+            return None
         
     def __del__(self):
         """Clean up resources when object is destroyed"""

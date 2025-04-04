@@ -6,6 +6,7 @@ A web application that captures real-time audio input, analyzes and classifies m
 
 - **Real-Time Audio Input**: Capture audio from your microphone with low latency
 - **Audio File Upload**: Upload and analyze your own audio files in various formats (WAV, MP3, OGG, FLAC, M4A)
+- **Audio Playback**: Replay recorded sounds or uploaded music files through the web interface
 - **Music Genre Classification**: Identify music genres using audio analysis
 - **Musical Component Analysis**: Decompose audio into rhythm, melody, and instrumentation components
 - **Interactive Visualizations**: View real-time, interactive visualizations of musical features
@@ -66,7 +67,14 @@ A web application that captures real-time audio input, analyzes and classifies m
    - Explore the rhythm, melody, and instrumentation visualizations
    - Click on different elements of the visualizations to see detailed information about specific musical components
 
-5. If you encounter issues with microphone access (common on macOS), the app will automatically switch to demo mode, allowing you to still test the visualizations.
+5. Play back the audio:
+   - After recording or uploading a file, the "Play Audio" button will become active
+   - Click the button to play back the most recent audio
+   - For recordings, this captures what was recorded from your microphone or the demo audio
+   - For file uploads, this plays back the uploaded file
+   - The audio player provides standard controls (play/pause, timeline scrubbing, volume)
+
+6. If you encounter issues with microphone access (common on macOS), the app will automatically switch to demo mode, allowing you to still test the visualizations.
 
 ## Troubleshooting
 
@@ -79,6 +87,11 @@ A web application that captures real-time audio input, analyzes and classifies m
 - Ensure your audio file is in one of the supported formats (WAV, MP3, OGG, FLAC, M4A)
 - Large files may take longer to process
 - If the app becomes unresponsive, try refreshing the page
+
+### Audio Playback Issues
+- If playback doesn't work, ensure your browser supports HTML5 audio
+- Try different audio file formats if you encounter compatibility issues
+- For very large files, there might be a delay before playback starts
 
 ## System Requirements
 

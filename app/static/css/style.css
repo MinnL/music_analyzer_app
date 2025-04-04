@@ -87,6 +87,18 @@ body {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
+.btn-primary {
+    background-color: #4b6fff;
+    color: white;
+    border: none;
+}
+
+.btn-primary:hover {
+    background-color: #3a5cff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
 /* Genre display styling */
 #genre-display {
     font-size: 2.5rem;
@@ -160,6 +172,31 @@ body {
 #file-mode-alert {
     font-size: 0.9rem;
     border-left: 4px solid #17a2b8;
+}
+
+/* Audio player styling */
+#audio-player {
+    width: 100%;
+    border-radius: 30px;
+    outline: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+#audio-player::-webkit-media-controls-panel {
+    background-color: #f0f8ff;
+}
+
+#playback-controls {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+#playback-info {
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-top: 5px;
+    text-align: center;
 }
 
 /* File upload styling */
