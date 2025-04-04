@@ -102,7 +102,7 @@ class MusicAnalyzer:
         # If audio data is empty, return empty features
         if len(audio_data) == 0:
             return {
-                "tempo": 0,
+                "tempo": 0.0,
                 "spectral_centroid": np.array([]),
                 "spectral_rolloff": np.array([]),
                 "spectral_contrast": np.array([]),
@@ -115,6 +115,10 @@ class MusicAnalyzer:
             # Tempo and beat information
             onset_env = librosa.onset.onset_strength(y=audio_data, sr=self.sample_rate)
             tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=self.sample_rate)
+            
+            # Ensure tempo is a scalar
+            if isinstance(tempo, np.ndarray):
+                tempo = float(tempo.item() if tempo.size == 1 else tempo.mean())
             
             # Spectral features
             spectral_centroid = librosa.feature.spectral_centroid(y=audio_data, sr=self.sample_rate)[0]
@@ -138,7 +142,7 @@ class MusicAnalyzer:
         except Exception as e:
             print(f"Error extracting features: {e}")
             return {
-                "tempo": 0,
+                "tempo": 0.0,
                 "spectral_centroid": np.array([]),
                 "spectral_rolloff": np.array([]),
                 "spectral_contrast": np.array([]),
@@ -162,12 +166,17 @@ class MusicAnalyzer:
         # Analyze rhythm
         rhythm = {}
         if features["tempo"] > 0:
-            rhythm["tempo"] = features["tempo"]
+            # Ensure tempo is a scalar value
+            tempo = features["tempo"]
+            if isinstance(tempo, np.ndarray):
+                tempo = float(tempo.item() if tempo.size == 1 else tempo.mean())
+                
+            rhythm["tempo"] = tempo
             
             # Categorize tempo
-            if features["tempo"] < 70:
+            if tempo < 70:
                 rhythm["tempo_category"] = "Slow"
-            elif features["tempo"] < 120:
+            elif tempo < 120:
                 rhythm["tempo_category"] = "Medium"
             else:
                 rhythm["tempo_category"] = "Fast"
@@ -175,7 +184,7 @@ class MusicAnalyzer:
             # Simple rhythm complexity estimation based on spectral contrast variation
             if len(features["spectral_contrast"]) > 0:
                 rhythm_complexity = np.mean(np.std(features["spectral_contrast"], axis=1))
-                rhythm["complexity"] = rhythm_complexity
+                rhythm["complexity"] = float(rhythm_complexity)
                 
                 if rhythm_complexity < 0.4:
                     rhythm["complexity_category"] = "Simple"
@@ -184,7 +193,7 @@ class MusicAnalyzer:
                 else:
                     rhythm["complexity_category"] = "Complex"
         else:
-            rhythm = {"tempo": 0, "tempo_category": "Unknown", "complexity": 0, "complexity_category": "Unknown"}
+            rhythm = {"tempo": 0.0, "tempo_category": "Unknown", "complexity": 0.0, "complexity_category": "Unknown"}
             
         # Analyze melody using chroma features
         melody = {}
@@ -197,7 +206,8 @@ class MusicAnalyzer:
             
             # Pitch variety
             pitch_variety = np.std(chroma_mean)
-            melody["pitch_variety"] = pitch_variety
+            # Convert to Python float to avoid numpy type issues
+            melody["pitch_variety"] = float(pitch_variety)
             
             if pitch_variety < 0.1:
                 melody["variety_category"] = "Low"
@@ -217,7 +227,7 @@ class MusicAnalyzer:
         else:
             melody = {
                 "dominant_notes": [], 
-                "pitch_variety": 0, 
+                "pitch_variety": 0.0, 
                 "variety_category": "Unknown",
                 "modality": "Unknown"
             }
@@ -228,7 +238,7 @@ class MusicAnalyzer:
             # Spectral centroid correlates with brightness/sharpness
             if features["spectral_centroid"].size > 0:
                 brightness = np.mean(features["spectral_centroid"]) / (self.sample_rate/2)  # Normalize to 0-1
-                instrumentation["brightness"] = brightness
+                instrumentation["brightness"] = float(brightness)
                 
                 if brightness < 0.3:
                     instrumentation["brightness_category"] = "Dark/Warm"
@@ -237,13 +247,13 @@ class MusicAnalyzer:
                 else:
                     instrumentation["brightness_category"] = "Bright/Sharp"
             else:
-                instrumentation["brightness"] = 0
+                instrumentation["brightness"] = 0.0
                 instrumentation["brightness_category"] = "Unknown"
                 
             # Spectral contrast correlates with instrument separation/clarity
             if features["spectral_contrast"].size > 0:
                 contrast = np.mean(np.mean(features["spectral_contrast"]))
-                instrumentation["contrast"] = contrast
+                instrumentation["contrast"] = float(contrast)
                 
                 if contrast < 20:
                     instrumentation["contrast_category"] = "Blended/Smooth"
@@ -252,12 +262,12 @@ class MusicAnalyzer:
                 else:
                     instrumentation["contrast_category"] = "Distinct/Clear"
             else:
-                instrumentation["contrast"] = 0
+                instrumentation["contrast"] = 0.0
                 instrumentation["contrast_category"] = "Unknown"
                 
             # Overall timbre complexity from MFCC variance
             timbre_complexity = np.mean(np.std(features["mfcc"], axis=1))
-            instrumentation["timbre_complexity"] = timbre_complexity
+            instrumentation["timbre_complexity"] = float(timbre_complexity)
             
             if timbre_complexity < 10:
                 instrumentation["complexity_category"] = "Simple/Clean"
@@ -267,11 +277,11 @@ class MusicAnalyzer:
                 instrumentation["complexity_category"] = "Complex/Rich"
         else:
             instrumentation = {
-                "brightness": 0, 
+                "brightness": 0.0, 
                 "brightness_category": "Unknown",
-                "contrast": 0,
+                "contrast": 0.0,
                 "contrast_category": "Unknown",
-                "timbre_complexity": 0,
+                "timbre_complexity": 0.0,
                 "complexity_category": "Unknown"
             }
             

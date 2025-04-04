@@ -24,6 +24,10 @@ def create_rhythm_visualization(rhythm_data):
     
     # Get data from rhythm analysis
     tempo = rhythm_data.get("tempo", 0)
+    # Ensure tempo is a scalar value, not an array
+    if isinstance(tempo, np.ndarray):
+        tempo = float(tempo.item() if tempo.size == 1 else tempo.mean())
+    
     tempo_category = rhythm_data.get("tempo_category", "Unknown")
     complexity = rhythm_data.get("complexity", 0)
     complexity_category = rhythm_data.get("complexity_category", "Unknown")
@@ -78,6 +82,9 @@ def create_rhythm_visualization(rhythm_data):
     beat_times = [i * beat_interval for i in range(int(seconds / beat_interval) + 1) if i * beat_interval <= seconds]
     beat_markers = [1.0] * len(beat_times)
     
+    # Create a formatted tempo string for display, ensuring it's a regular Python float
+    tempo_display = f"{tempo:.1f}"
+    
     fig.add_trace(go.Scatter(
         x=beat_times,
         y=beat_markers,
@@ -85,8 +92,8 @@ def create_rhythm_visualization(rhythm_data):
         marker=dict(size=15, color='rgba(255, 0, 0, 0.8)'),
         name='Beat Markers',
         customdata=["tempo"] * len(beat_times),  # Store feature name for component details
-        hovertemplate='Beat at %{x:.2f}s<br>Tempo: %{text} BPM<extra></extra>',
-        text=[f"{tempo:.1f}"] * len(beat_times)
+        hovertemplate='Beat at %{x:.2f}s<br>Tempo: ' + tempo_display + ' BPM<extra></extra>',
+        text=[tempo_display] * len(beat_times)
     ))
     
     # Add annotations
@@ -96,7 +103,7 @@ def create_rhythm_visualization(rhythm_data):
             y=1.15,
             xref="paper",
             yref="paper",
-            text=f"Tempo: {tempo:.1f} BPM ({tempo_category})",
+            text=f"Tempo: {tempo_display} BPM ({tempo_category})",
             showarrow=False,
             font=dict(size=14)
         ),
@@ -156,9 +163,13 @@ def create_melody_visualization(melody_data):
     
     # Get melody data
     dominant_notes = melody_data.get("dominant_notes", [])
-    pitch_variety = melody_data.get("pitch_variety", 0)
+    pitch_variety = melody_data.get("pitch_variety", 0.0)
     variety_category = melody_data.get("variety_category", "Unknown")
     modality = melody_data.get("modality", "Unknown")
+    
+    # Ensure pitch_variety is a scalar float, not a numpy array
+    if isinstance(pitch_variety, np.ndarray):
+        pitch_variety = float(pitch_variety.item() if pitch_variety.size == 1 else pitch_variety.mean())
     
     # Create bar chart of note prominence
     # If we have dominant notes, create values for those notes
@@ -169,10 +180,10 @@ def create_melody_visualization(melody_data):
             if note in dominant_notes:
                 # Higher value for dominant notes, with first one highest
                 rank = dominant_notes.index(note)
-                note_values.append(1.0 - (rank * 0.2))
+                note_values.append(float(1.0 - (rank * 0.2)))
             else:
                 # Small random value for non-dominant notes
-                note_values.append(np.random.uniform(0.05, 0.15))
+                note_values.append(float(np.random.uniform(0.05, 0.15)))
     else:
         # Dummy data if no notes available
         note_values = [0.1] * len(all_notes)
@@ -216,7 +227,7 @@ def create_melody_visualization(melody_data):
         # Add markers for scale degrees
         fig.add_trace(go.Scatter(
             x=scale_notes,
-            y=[note_values[all_notes.index(note)] + 0.05 for note in scale_notes],
+            y=[float(note_values[all_notes.index(note)] + 0.05) for note in scale_notes],
             mode='markers',
             marker=dict(
                 symbol='star',
@@ -304,17 +315,25 @@ def create_instrumentation_visualization(instrumentation_data):
         return fig
     
     # Get instrumentation data
-    brightness = instrumentation_data.get("brightness", 0)
+    brightness = instrumentation_data.get("brightness", 0.0)
     brightness_category = instrumentation_data.get("brightness_category", "Unknown")
-    contrast = instrumentation_data.get("contrast", 0)
+    contrast = instrumentation_data.get("contrast", 0.0)
     contrast_category = instrumentation_data.get("contrast_category", "Unknown")
-    timbre_complexity = instrumentation_data.get("timbre_complexity", 0)
+    timbre_complexity = instrumentation_data.get("timbre_complexity", 0.0)
     complexity_category = instrumentation_data.get("complexity_category", "Unknown")
     
+    # Ensure values are Python float scalars, not numpy arrays
+    if isinstance(brightness, np.ndarray):
+        brightness = float(brightness.item() if brightness.size == 1 else brightness.mean())
+    if isinstance(contrast, np.ndarray):
+        contrast = float(contrast.item() if contrast.size == 1 else contrast.mean())
+    if isinstance(timbre_complexity, np.ndarray):
+        timbre_complexity = float(timbre_complexity.item() if timbre_complexity.size == 1 else timbre_complexity.mean())
+    
     # Normalize values for radar chart
-    brightness_norm = min(1.0, brightness)
-    contrast_norm = min(1.0, contrast / 50)  # Scale contrast to 0-1
-    complexity_norm = min(1.0, timbre_complexity / 40)  # Scale complexity to 0-1
+    brightness_norm = min(1.0, float(brightness))
+    contrast_norm = min(1.0, float(contrast) / 50)  # Scale contrast to 0-1
+    complexity_norm = min(1.0, float(timbre_complexity) / 40)  # Scale complexity to 0-1
     
     # Categories for radar chart
     categories = ['Brightness', 'Contrast', 'Complexity']
