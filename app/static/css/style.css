@@ -3,15 +3,16 @@
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: #f8f9fa;
-    color: #333;
+    color: #212529;
+    line-height: 1.6;
     margin: 0;
     padding: 0;
 }
 
-#content {
-    max-width: 1200px;
-    margin: 0 auto;
+.container-fluid {
     padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
 }
 
 /* Custom styles for Dash components */
@@ -27,11 +28,10 @@ body {
 
 /* Card styling */
 .card {
-    border-radius: 8px;
-    overflow: hidden;
+    border-radius: 10px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    background-color: white;
     margin-bottom: 20px;
+    border: none;
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -41,10 +41,11 @@ body {
 }
 
 .card-header {
-    background-color: #4b6fff;
+    background-color: #343a40;
     color: white;
-    padding: 12px 20px;
+    border-radius: 10px 10px 0 0 !important;
     font-weight: 600;
+    padding: 12px 20px;
 }
 
 .card-body {
@@ -53,96 +54,86 @@ body {
 
 /* Button styling */
 .btn {
-    border-radius: 4px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    border-radius: 5px;
+    font-weight: 500;
     padding: 8px 16px;
-    margin: 5px;
-    cursor: pointer;
-    transition: all 0.3s;
+    transition: all 0.2s;
+    min-width: 100px;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
 .btn-success {
     background-color: #28a745;
-    color: white;
-    border: none;
+    border-color: #28a745;
 }
 
 .btn-success:hover {
     background-color: #218838;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-color: #1e7e34;
 }
 
 .btn-danger {
     background-color: #dc3545;
-    color: white;
-    border: none;
+    border-color: #dc3545;
 }
 
 .btn-danger:hover {
     background-color: #c82333;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-color: #bd2130;
 }
 
 .btn-primary {
-    background-color: #4b6fff;
-    color: white;
-    border: none;
+    background-color: #007bff;
+    border-color: #007bff;
 }
 
 .btn-primary:hover {
-    background-color: #3a5cff;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    background-color: #0069d9;
+    border-color: #0062cc;
 }
 
 /* Genre display styling */
 #genre-display {
-    font-size: 2.5rem;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
-    color: #4b6fff;
-    text-transform: capitalize;
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #343a40;
 }
 
 #genre-confidence {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     color: #6c757d;
-    margin-bottom: 1rem;
 }
 
 /* Component details styling */
 #component-details {
+    padding: 15px;
     background-color: #f8f9fa;
     border-radius: 5px;
-    padding: 15px;
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.1);
     min-height: 100px;
 }
 
 /* Visualization panels */
-.visualization-panel {
-    cursor: pointer;
-}
-
-.visualization-panel:hover {
-    opacity: 0.9;
+.js-plotly-plot {
+    width: 100%;
+    height: 250px;
 }
 
 /* Alert styling */
 .alert {
-    border-radius: 4px;
-    margin-bottom: 1rem;
-    padding: 0.75rem 1.25rem;
-    font-weight: 500;
+    border-radius: 5px;
+    padding: 12px 16px;
+    margin-bottom: 15px;
+    font-size: 0.95rem;
 }
 
 .alert-warning {
     background-color: #fff3cd;
-    border-color: #ffecb5;
+    border-color: #ffeeba;
     color: #856404;
 }
 
@@ -152,14 +143,16 @@ body {
     color: #0c5460;
 }
 
+.alert-secondary {
+    background-color: #e2e3e5;
+    border-color: #d6d8db;
+    color: #383d41;
+}
+
 /* Recording status styling */
 #recording-status, #upload-status {
-    font-weight: 600;
-    margin-top: 10px;
-    padding: 8px;
-    border-radius: 4px;
-    background-color: #f8f9fa;
-    text-align: center;
+    font-weight: 500;
+    color: #495057;
 }
 
 /* Demo mode styling */
@@ -176,62 +169,63 @@ body {
 
 /* Audio player styling */
 #audio-player {
-    width: 100%;
-    border-radius: 30px;
-    outline: none;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-#audio-player::-webkit-media-controls-panel {
-    background-color: #f0f8ff;
+    max-width: 100%;
+    margin-top: 10px;
 }
 
 #playback-controls {
-    margin-top: 15px;
-    padding-top: 15px;
-    border-top: 1px solid #eee;
+    width: 100%;
 }
 
 #playback-info {
-    font-size: 0.9rem;
-    color: #6c757d;
-    margin-top: 5px;
-    text-align: center;
+    font-size: 0.85rem;
 }
 
 /* File upload styling */
 .upload-area {
-    border: 2px dashed #4b6fff;
+    border: 2px dashed #ced4da;
     border-radius: 5px;
     padding: 20px;
     text-align: center;
-    margin: 10px 0;
-    background-color: #f8f9fc;
+    margin: 15px 0;
     transition: all 0.3s;
 }
 
 .upload-area:hover {
-    background-color: #e6f0ff;
-    cursor: pointer;
+    border-color: #007bff;
+    background-color: rgba(0, 123, 255, 0.05);
 }
 
 /* Responsive adjustments */
-@media (max-width: 768px) {
-    .card {
-        margin-bottom: 15px;
+@media (max-width: 992px) {
+    .row {
+        flex-direction: column;
     }
-    
-    #genre-display {
-        font-size: 2rem;
+    .col-4 {
+        width: 100%;
+        max-width: 100%;
+        flex: 0 0 100%;
     }
-    
-    .dash-graph {
-        height: 250px !important;
-    }
-    
     .btn {
         width: 100%;
         margin: 5px 0;
+    }
+    .card {
+        margin: 10px 0;
+    }
+}
+
+@media (max-width: 576px) {
+    .container-fluid {
+        padding: 10px;
+    }
+    
+    #genre-display {
+        font-size: 1.5rem;
+    }
+    
+    .card-header {
+        padding: 10px 15px;
     }
 }
 
@@ -253,4 +247,52 @@ body {
     100% {
         transform: rotate(360deg);
     }
+}
+
+/* Analyzing mode styling */
+#analyzing-alert {
+    font-size: 0.9rem;
+    border-left: 4px solid #6c757d;
+    display: flex;
+    align-items: center;
+}
+
+#analyzing-alert::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-right: 10px;
+    border: 2px solid #6c757d;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spinner 0.8s linear infinite;
+}
+
+/* Better visibility for clickable elements */
+.card-body .js-plotly-plot {
+    position: relative;
+}
+
+.card-body .js-plotly-plot::after {
+    content: '';
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 20px;
+    height: 20px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-info-circle" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>');
+    background-repeat: no-repeat;
+    background-size: contain;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+}
+
+.card-body .js-plotly-plot:hover::after {
+    opacity: 1;
+}
+
+/* Optimized performance for transitions */
+* {
+    will-change: transform, opacity;
 } 

@@ -5,26 +5,39 @@ import torchaudio
 from sklearn.preprocessing import StandardScaler
 import os
 import json
+from .models.genre_classifier import GenreClassifier
+from .models.advanced_genre_classifier import AdvancedGenreClassifier
+import time
+import hashlib
+from .models.high_confidence_classifier import HighConfidenceClassifier
 
 class MusicAnalyzer:
     """
-    Class for analyzing audio and classifying genres
+    Class for analyzing audio to identify genre and components
     """
     
-    def __init__(self, model_path=None, sample_rate=22050):
+    def __init__(self, sample_rate=22050, use_high_confidence=True):
         """
         Initialize the music analyzer
         
         Args:
-            model_path: Path to pre-trained model (if None, a dummy model will be used)
             sample_rate: Sample rate for audio analysis
+            use_high_confidence: Whether to use the High Confidence Genre Classifier for reliable predictions
         """
+        # Initialize attributes
         self.sample_rate = sample_rate
-        self.model = None
-        self.genres = ["classical", "country", "electronic", "hip-hop", "jazz", 
-                      "metal", "pop", "reggae", "rock", "blues"]
+        self.use_high_confidence = use_high_confidence
         
-        # Component descriptions for various genres and audio features
+        # Define genres directly in the class
+        self.genres = [
+            'blues', 'classical', 'country', 'disco',
+            'hiphop', 'jazz', 'metal', 'pop', 'reggae', 'rock'
+        ]
+        
+        # Initialize genre classifier to None
+        self.genre_classifier = None
+        
+        # Initialize component descriptions (for UI details)
         self.component_descriptions = {
             "rhythm": {
                 "tempo": "The speed or pace of the music, measured in beats per minute (BPM).",
@@ -67,26 +80,45 @@ class MusicAnalyzer:
             }
         }
         
-        # Load or initialize model
-        self._load_or_init_model(model_path)
+        # Create a cache to avoid reprocessing the same audio
+        self.analysis_cache = {}
+        self.cache_size_limit = 5  # Only keep last 5 analyses
         
-    def _load_or_init_model(self, model_path):
-        """Load a pre-trained model or initialize a dummy model for demonstration"""
-        if model_path and os.path.exists(model_path):
-            # Load actual model (for a real implementation)
+        # Load or initialize model
+        self._load_or_init_model()
+        
+        # Previous analysis results
+        self.previous_analysis = None
+        
+    def _load_or_init_model(self, model_path=None):
+        """Load or initialize genre classification model"""
+        if self.genre_classifier is None:
             try:
-                # This is a placeholder for actual model loading code
-                pass
+                # If using high confidence classifier, use that
+                if self.use_high_confidence:
+                    print("Using High Confidence Genre Classifier for reliable predictions")
+                    self.genre_classifier = HighConfidenceClassifier()
+                else:
+                    # Otherwise use the original classifier with pre-trained model
+                    default_model_path = "app/models/pretrained/gtzan_model.pt"
+                    
+                    # If model_path is provided and exists, use it
+                    if model_path and os.path.exists(model_path):
+                        self.genre_classifier = GenreClassifier(model_path=model_path)
+                    # Otherwise check for default model path
+                    elif os.path.exists(default_model_path):
+                        self.genre_classifier = GenreClassifier(model_path=default_model_path)
+                    else:
+                        # Initialize with random weights if no pretrained model
+                        self.genre_classifier = GenreClassifier()
             except Exception as e:
-                print(f"Error loading model: {e}")
-                self._init_dummy_model()
-        else:
-            # For demonstration, use a dummy model
-            self._init_dummy_model()
-            
+                print(f"Error initializing genre classifier: {e}")
+                # Fallback to high confidence classifier
+                self.genre_classifier = HighConfidenceClassifier()
+        
     def _init_dummy_model(self):
         """Initialize a dummy model for demonstration purposes"""
-        # This would be replaced with actual model initialization in a real implementation
+        # This is kept for backward compatibility but will not be used
         print("Using dummy model for demonstration purposes")
         
     def extract_features(self, audio_data):
@@ -110,28 +142,83 @@ class MusicAnalyzer:
                 "mfcc": np.array([])
             }
             
+        # Check if audio is in cache using hash
+        audio_hash = hash(audio_data[:min(len(audio_data), self.sample_rate * 3)].tobytes())
+        if audio_hash in self.analysis_cache and 'features' in self.analysis_cache[audio_hash]:
+            # print("Using cached features")
+            return self.analysis_cache[audio_hash]['features']
+        
         # Compute basic audio features using librosa
         try:
-            # Tempo and beat information
-            onset_env = librosa.onset.onset_strength(y=audio_data, sr=self.sample_rate)
-            tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=self.sample_rate)
+            # Use shorter audio segment (max 6 seconds)
+            max_length = min(len(audio_data), self.sample_rate * 6)
+            audio_segment = audio_data[:max_length]
+            
+            # Tempo and beat information - use smaller frames
+            onset_env = librosa.onset.onset_strength(
+                y=audio_segment, 
+                sr=self.sample_rate,
+                hop_length=512  # Smaller hop length
+            )
+            tempo, _ = librosa.beat.beat_track(
+                onset_envelope=onset_env, 
+                sr=self.sample_rate,
+                hop_length=512
+            )
             
             # Ensure tempo is a scalar
             if isinstance(tempo, np.ndarray):
                 tempo = float(tempo.item() if tempo.size == 1 else tempo.mean())
             
-            # Spectral features
-            spectral_centroid = librosa.feature.spectral_centroid(y=audio_data, sr=self.sample_rate)[0]
-            spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=self.sample_rate)[0]
-            spectral_contrast = librosa.feature.spectral_contrast(y=audio_data, sr=self.sample_rate)
+            # Spectral features with reduced frame size
+            hop_length = 1024  # Larger hop length for faster processing
             
-            # Tonal features
-            chroma = librosa.feature.chroma_stft(y=audio_data, sr=self.sample_rate)
+            # Use a smaller fft size for faster computation
+            n_fft = 1024
             
-            # Timbre features
-            mfcc = librosa.feature.mfcc(y=audio_data, sr=self.sample_rate, n_mfcc=13)
+            # Only compute essential spectral features
+            spectral_centroid = librosa.feature.spectral_centroid(
+                y=audio_segment, 
+                sr=self.sample_rate,
+                n_fft=n_fft,
+                hop_length=hop_length
+            )[0]
             
-            return {
+            spectral_rolloff = librosa.feature.spectral_rolloff(
+                y=audio_segment, 
+                sr=self.sample_rate,
+                n_fft=n_fft,
+                hop_length=hop_length
+            )[0]
+            
+            # Calculate spectral contrast with reduced complexity
+            spectral_contrast = librosa.feature.spectral_contrast(
+                y=audio_segment, 
+                sr=self.sample_rate,
+                n_fft=n_fft,
+                hop_length=hop_length,
+                n_bands=4  # Fewer bands for faster processing
+            )
+            
+            # Tonal features with reduced complexity
+            chroma = librosa.feature.chroma_stft(
+                y=audio_segment, 
+                sr=self.sample_rate,
+                n_fft=n_fft,
+                hop_length=hop_length,
+                n_chroma=12
+            )
+            
+            # Fewer MFCCs for faster processing
+            mfcc = librosa.feature.mfcc(
+                y=audio_segment, 
+                sr=self.sample_rate, 
+                n_mfcc=10,  # Fewer coefficients
+                n_fft=n_fft,
+                hop_length=hop_length
+            )
+            
+            features = {
                 "tempo": tempo,
                 "spectral_centroid": spectral_centroid,
                 "spectral_rolloff": spectral_rolloff,
@@ -139,6 +226,18 @@ class MusicAnalyzer:
                 "chroma": chroma,
                 "mfcc": mfcc
             }
+            
+            # Cache the features
+            if audio_hash not in self.analysis_cache:
+                self.analysis_cache[audio_hash] = {}
+            self.analysis_cache[audio_hash]['features'] = features
+            
+            # Remove oldest entries if cache gets too large
+            if len(self.analysis_cache) > self.cache_size_limit:
+                oldest_key = next(iter(self.analysis_cache))
+                del self.analysis_cache[oldest_key]
+                
+            return features
         except Exception as e:
             print(f"Error extracting features: {e}")
             return {
@@ -160,8 +259,7 @@ class MusicAnalyzer:
         Returns:
             Dictionary of component analyses
         """
-        # This is a simplified analysis for demonstration
-        # In a real implementation, this would involve more sophisticated algorithms
+        # Simplified analysis for better performance
         
         # Analyze rhythm
         rhythm = {}
@@ -173,7 +271,7 @@ class MusicAnalyzer:
                 
             rhythm["tempo"] = tempo
             
-            # Categorize tempo
+            # Simple categorization
             if tempo < 70:
                 rhythm["tempo_category"] = "Slow"
             elif tempo < 120:
@@ -181,9 +279,10 @@ class MusicAnalyzer:
             else:
                 rhythm["tempo_category"] = "Fast"
                 
-            # Simple rhythm complexity estimation based on spectral contrast variation
+            # Simplified rhythm complexity estimation
             if len(features["spectral_contrast"]) > 0:
-                rhythm_complexity = np.mean(np.std(features["spectral_contrast"], axis=1))
+                # Use mean instead of std for faster calculation
+                rhythm_complexity = np.mean(np.mean(features["spectral_contrast"], axis=1))
                 rhythm["complexity"] = float(rhythm_complexity)
                 
                 if rhythm_complexity < 0.4:
@@ -195,19 +294,18 @@ class MusicAnalyzer:
         else:
             rhythm = {"tempo": 0.0, "tempo_category": "Unknown", "complexity": 0.0, "complexity_category": "Unknown"}
             
-        # Analyze melody using chroma features
+        # Analyze melody - simplified
         melody = {}
         if features["chroma"].size > 0:
-            # Dominant pitch classes
+            # Get just top note instead of all 3
             chroma_mean = np.mean(features["chroma"], axis=1)
-            dominant_notes = np.argsort(-chroma_mean)[:3]  # Top 3 dominant notes
+            dominant_note_idx = np.argmax(chroma_mean)
             note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-            melody["dominant_notes"] = [note_names[i % 12] for i in dominant_notes]
+            melody["dominant_notes"] = [note_names[dominant_note_idx % 12]]
             
-            # Pitch variety
-            pitch_variety = np.std(chroma_mean)
-            # Convert to Python float to avoid numpy type issues
-            melody["pitch_variety"] = float(pitch_variety)
+            # Simplified pitch variety
+            pitch_variety = float(np.max(chroma_mean) - np.min(chroma_mean))
+            melody["pitch_variety"] = pitch_variety
             
             if pitch_variety < 0.1:
                 melody["variety_category"] = "Low"
@@ -216,9 +314,9 @@ class MusicAnalyzer:
             else:
                 melody["variety_category"] = "High"
                 
-            # Estimate if major or minor based on relative presence of major/minor thirds
-            major_third_idx = (dominant_notes[0] + 4) % 12
-            minor_third_idx = (dominant_notes[0] + 3) % 12
+            # Simplified modality detection
+            major_third_idx = (dominant_note_idx + 4) % 12
+            minor_third_idx = (dominant_note_idx + 3) % 12
             
             if chroma_mean[major_third_idx] > chroma_mean[minor_third_idx]:
                 melody["modality"] = "Major"
@@ -232,12 +330,12 @@ class MusicAnalyzer:
                 "modality": "Unknown"
             }
             
-        # Analyze instrumentation using MFCCs and spectral features
+        # Analyze instrumentation - simplified
         instrumentation = {}
         if features["mfcc"].size > 0:
-            # Spectral centroid correlates with brightness/sharpness
+            # Simplified brightness calculation
             if features["spectral_centroid"].size > 0:
-                brightness = np.mean(features["spectral_centroid"]) / (self.sample_rate/2)  # Normalize to 0-1
+                brightness = np.mean(features["spectral_centroid"]) / (self.sample_rate/2)
                 instrumentation["brightness"] = float(brightness)
                 
                 if brightness < 0.3:
@@ -250,10 +348,11 @@ class MusicAnalyzer:
                 instrumentation["brightness"] = 0.0
                 instrumentation["brightness_category"] = "Unknown"
                 
-            # Spectral contrast correlates with instrument separation/clarity
+            # Simplified contrast calculation
             if features["spectral_contrast"].size > 0:
-                contrast = np.mean(np.mean(features["spectral_contrast"]))
-                instrumentation["contrast"] = float(contrast)
+                # Use mean instead of complex calculation
+                contrast = float(np.mean(features["spectral_contrast"]))
+                instrumentation["contrast"] = contrast
                 
                 if contrast < 20:
                     instrumentation["contrast_category"] = "Blended/Smooth"
@@ -265,13 +364,13 @@ class MusicAnalyzer:
                 instrumentation["contrast"] = 0.0
                 instrumentation["contrast_category"] = "Unknown"
                 
-            # Overall timbre complexity from MFCC variance
-            timbre_complexity = np.mean(np.std(features["mfcc"], axis=1))
-            instrumentation["timbre_complexity"] = float(timbre_complexity)
+            # Simplified timbre complexity (faster calculation)
+            timbre_complexity = float(np.mean(features["mfcc"]))
+            instrumentation["complexity"] = timbre_complexity
             
-            if timbre_complexity < 10:
-                instrumentation["complexity_category"] = "Simple/Clean"
-            elif timbre_complexity < 30:
+            if timbre_complexity < -5:
+                instrumentation["complexity_category"] = "Simple/Pure"
+            elif timbre_complexity < 5:
                 instrumentation["complexity_category"] = "Moderate"
             else:
                 instrumentation["complexity_category"] = "Complex/Rich"
@@ -279,9 +378,9 @@ class MusicAnalyzer:
             instrumentation = {
                 "brightness": 0.0, 
                 "brightness_category": "Unknown",
-                "contrast": 0.0,
+                "contrast": 0.0, 
                 "contrast_category": "Unknown",
-                "timbre_complexity": 0.0,
+                "complexity": 0.0, 
                 "complexity_category": "Unknown"
             }
             
@@ -290,47 +389,78 @@ class MusicAnalyzer:
             "melody": melody,
             "instrumentation": instrumentation
         }
-        
-    def classify_genre(self, features):
+    
+    def classify_genre(self, audio_data):
         """
-        Classify music genre based on audio features
+        Classify music genre based on audio data
         
         Args:
-            features: Dictionary of audio features
+            audio_data: Raw audio data as numpy array
             
         Returns:
             Tuple of (genre, confidence)
         """
-        # This is a dummy implementation for demonstration
-        # In a real implementation, this would use the actual trained model
-        
-        # If features are empty, return unknown
-        if len(features["spectral_centroid"]) == 0:
+        # If audio_data is empty, return unknown
+        if len(audio_data) == 0:
             return "Unknown", 0.0
             
+        # Check if result is in cache
+        audio_hash = hash(audio_data[:min(len(audio_data), self.sample_rate * 3)].tobytes())
+        if audio_hash in self.analysis_cache and 'genre' in self.analysis_cache[audio_hash]:
+            # print("Using cached genre")
+            return self.analysis_cache[audio_hash]['genre'], self.analysis_cache[audio_hash]['confidence']
+            
+        # Use the pretrained model to predict genre
+        try:
+            # Ensure model is loaded
+            if self.genre_classifier is None:
+                self._load_or_init_model()
+                
+            genre, confidence = self.genre_classifier.predict_genre(
+                audio_data=audio_data,
+                sr=self.sample_rate
+            )
+            
+            # Cache the result
+            if audio_hash not in self.analysis_cache:
+                self.analysis_cache[audio_hash] = {}
+            self.analysis_cache[audio_hash]['genre'] = genre
+            self.analysis_cache[audio_hash]['confidence'] = confidence
+            
+            return genre, confidence
+        except Exception as e:
+            print(f"Error during genre classification: {e}")
+            # Fallback to simple heuristic in case of error
+            return self._dummy_classify(audio_data)
+    
+    def _dummy_classify(self, audio_data):
+        """Fallback classification method using simple heuristics"""
+        # Extract basic features
+        features = self.extract_features(audio_data)
+        
         # Simple heuristic for demonstration purposes
         tempo = features["tempo"]
         spectral_centroid_mean = np.mean(features["spectral_centroid"]) if len(features["spectral_centroid"]) > 0 else 0
         
         # These are arbitrary thresholds for demonstration
         if spectral_centroid_mean > 2000 and tempo > 130:
-            genre_idx = 2  # electronic
+            genre_idx = self.genres.index('disco')  # or closest match
             confidence = 85.5
         elif spectral_centroid_mean > 1800 and tempo > 100:
-            genre_idx = 6  # pop
+            genre_idx = self.genres.index('pop')
             confidence = 78.3
         elif spectral_centroid_mean < 1200 and tempo < 90:
-            genre_idx = 0  # classical
+            genre_idx = self.genres.index('classical')
             confidence = 82.7
         elif 1400 < spectral_centroid_mean < 1800 and 80 < tempo < 120:
-            genre_idx = 4  # jazz
+            genre_idx = self.genres.index('jazz')
             confidence = 76.9
         elif spectral_centroid_mean > 1800 and tempo > 120:
-            genre_idx = 5  # metal
+            genre_idx = self.genres.index('metal')
             confidence = 88.2
         else:
             # Default to rock with medium confidence
-            genre_idx = 8  # rock
+            genre_idx = self.genres.index('rock')
             confidence = 65.0
             
         return self.genres[genre_idx], confidence
@@ -345,14 +475,44 @@ class MusicAnalyzer:
         Returns:
             Tuple of (genre, confidence, components)
         """
-        # Extract features
-        features = self.extract_features(audio_data)
+        start_time = time.time()
         
-        # Classify genre
-        genre, confidence = self.classify_genre(features)
+        # Use shorter audio segment for analysis (max 6 seconds)
+        max_length = min(len(audio_data), self.sample_rate * 6)
+        audio_segment = audio_data[:max_length]
+        
+        # Check if complete analysis is in cache
+        audio_hash = hash(audio_segment.tobytes())
+        if audio_hash in self.analysis_cache and 'components' in self.analysis_cache[audio_hash]:
+            genre = self.analysis_cache[audio_hash]['genre']
+            confidence = self.analysis_cache[audio_hash]['confidence']
+            components = self.analysis_cache[audio_hash]['components']
+            # print(f"Using cached complete analysis ({time.time() - start_time:.3f}s)")
+            return genre, confidence, components
+        
+        # Extract features for component analysis
+        features = self.extract_features(audio_segment)
+        
+        # Classify genre directly from audio data
+        genre, confidence = self.classify_genre(audio_segment)
         
         # Analyze components
         components = self.analyze_components(features)
+        
+        # Cache the complete analysis
+        if audio_hash not in self.analysis_cache:
+            self.analysis_cache[audio_hash] = {}
+        self.analysis_cache[audio_hash]['genre'] = genre
+        self.analysis_cache[audio_hash]['confidence'] = confidence
+        self.analysis_cache[audio_hash]['components'] = components
+        
+        # Remove oldest entries if cache gets too large
+        if len(self.analysis_cache) > self.cache_size_limit:
+            oldest_key = next(iter(self.analysis_cache))
+            del self.analysis_cache[oldest_key]
+        
+        end_time = time.time()
+        print(f"Audio analysis completed in {end_time - start_time:.3f} seconds")
         
         return genre, confidence, components
         

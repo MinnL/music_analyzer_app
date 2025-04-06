@@ -23,7 +23,7 @@ server = app.server
 
 # Initialize audio input and analyzer
 audio_input = AudioInput()
-music_analyzer = MusicAnalyzer()
+music_analyzer = MusicAnalyzer(use_high_confidence=True)  # Use high confidence model for better confidence scores
 
 # Define layout
 app.layout = dbc.Container([
@@ -77,6 +77,14 @@ app.layout = dbc.Container([
                     dbc.Alert(
                         id="file-mode-alert",
                         color="info",
+                        is_open=False,
+                        className="mt-3"
+                    ),
+                    # Add loading indicator
+                    dbc.Alert(
+                        "Analyzing audio... Please wait.",
+                        id="analyzing-alert",
+                        color="secondary",
                         is_open=False,
                         className="mt-3"
                     ),
@@ -157,7 +165,8 @@ app.layout = dbc.Container([
     dcc.Store(id="demo-mode-store", data=False),
     dcc.Store(id="file-mode-store", data=False),
     dcc.Store(id="audio-playback-data", data=None),
-    dcc.Interval(id="update-interval", interval=1000, n_intervals=0, disabled=True)
+    dcc.Store(id="last-analysis-time", data=0),
+    dcc.Interval(id="update-interval", interval=2000, n_intervals=0, disabled=True)  # Reduced frequency
 ], fluid=True)
 
 # Callbacks
@@ -200,22 +209,24 @@ def toggle_recording(start_clicks, stop_clicks, demo_mode, file_mode):
      Output("file-mode-alert", "children", allow_duplicate=True),
      Output("record-button", "disabled", allow_duplicate=True),
      Output("stop-button", "disabled", allow_duplicate=True),
-     Output("update-interval", "disabled", allow_duplicate=True)],
+     Output("update-interval", "disabled", allow_duplicate=True),
+     Output("analyzing-alert", "is_open")],
     [Input("upload-audio", "contents")],
     [State("upload-audio", "filename")],
     prevent_initial_call=True
 )
 def process_uploaded_file(contents, filename):
     if contents is None:
-        return "", False, False, "", False, True, True
+        return "", False, False, "", False, True, True, False
     
+    # Show analyzing alert
     success, message = audio_input.process_uploaded_file(contents, filename)
     
     if success:
         alert_message = f"Analyzing file: {filename}"
-        return message, True, True, alert_message, True, True, False
+        return message, True, True, alert_message, True, True, False, True
     else:
-        return message, False, False, "", False, True, True
+        return message, False, False, "", False, True, True, False
 
 @callback(
     [Output("genre-display", "children"),
@@ -223,17 +234,28 @@ def process_uploaded_file(contents, filename):
      Output("rhythm-graph", "figure"),
      Output("melody-graph", "figure"),
      Output("instrumentation-graph", "figure"),
-     Output("play-button", "disabled")],
+     Output("play-button", "disabled"),
+     Output("analyzing-alert", "is_open", allow_duplicate=True),
+     Output("last-analysis-time", "data")],
     [Input("update-interval", "n_intervals")],
-    [State("file-mode-store", "data")],
+    [State("file-mode-store", "data"),
+     State("last-analysis-time", "data")],
     prevent_initial_call=True
 )
-def update_analysis(n_intervals, file_mode):
+def update_analysis(n_intervals, file_mode, last_analysis_time):
+    import time
+    current_time = time.time()
+    
+    # Only analyze if enough time has passed since last analysis (3 seconds minimum)
+    if current_time - last_analysis_time < 3 and last_analysis_time > 0:
+        # Return previous state without updating
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time
+    
     # Get latest audio data
     audio_data = audio_input.get_latest_data()
     
     if audio_data is None or len(audio_data) == 0:
-        return "No data", "", go.Figure(), go.Figure(), go.Figure(), True
+        return "No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, current_time
     
     # Analyze audio
     genre, confidence, components = music_analyzer.analyze(audio_data)
@@ -256,7 +278,10 @@ def update_analysis(n_intervals, file_mode):
     # Enable play button if we have audio data
     play_button_disabled = False
     
-    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, play_button_disabled
+    # Hide analyzing alert
+    analyzing_alert_visible = False
+    
+    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, play_button_disabled, analyzing_alert_visible, current_time
 
 @callback(
     [Output("audio-playback-data", "data"),
@@ -346,4 +371,4 @@ def display_component_details(rhythm_click, melody_click, instrumentation_click)
     return "Click on a visualization element to see details."
 
 if __name__ == "__main__":
-    app.run(debug=True) 
+    app.run(debug=True, port=8053) 

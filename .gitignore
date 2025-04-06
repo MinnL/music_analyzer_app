@@ -134,6 +134,10 @@ dmypy.json
 *.mp3
 *.ogg
 
+# Application specific
+app.pid
+app/models/pretrained/
+
 # OS generated files
 .DS_Store
 .DS_Store?

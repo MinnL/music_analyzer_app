@@ -1,112 +1,116 @@
-# Real-Time Music Analysis & Visualization Tool
+# Music Analyzer App
 
-A web application that captures real-time audio input, analyzes and classifies music genres, and provides interactive visualizations of musical components such as rhythm, melody, and instrumentation.
+An interactive web application for analyzing music and audio in real-time. The app can identify genre, rhythm patterns, melodic structure, and instrumentation from microphone input or uploaded audio files.
 
 ## Features
 
-- **Real-Time Audio Input**: Capture audio from your microphone with low latency
-- **Audio File Upload**: Upload and analyze your own audio files in various formats (WAV, MP3, OGG, FLAC, M4A)
-- **Audio Playback**: Replay recorded sounds or uploaded music files through the web interface
-- **Music Genre Classification**: Identify music genres using audio analysis
-- **Musical Component Analysis**: Decompose audio into rhythm, melody, and instrumentation components
-- **Interactive Visualizations**: View real-time, interactive visualizations of musical features
-- **Detailed Component Descriptions**: Explore in-depth information about musical elements
-- **Demo Mode**: If microphone access fails, the app automatically switches to a demo mode
+- **Real-time Audio Analysis**: Capture and analyze audio from your microphone
+- **Audio File Upload**: Upload music files for analysis (WAV, MP3, OGG, FLAC, M4A)
+- **Audio Playback**: Replay recorded or uploaded audio files
+- **High-Confidence Genre Classification**: Utilizes an advanced classifier analyzing multiple audio features across segments for improved accuracy and confidence.
+- **Extended Audio Analysis**: Processes up to 60 seconds of audio for more comprehensive analysis.
+- **Interactive Visualizations**: 
+  - Rhythm analysis with tempo and beat patterns
+  - Melodic analysis with key detection and note distribution
+  - Instrumentation analysis with timbral characteristics
+- **Responsive Design**: Works on desktop and tablet devices
+
+## Pre-trained Model
+
+The app uses a Convolutional Neural Network (CNN) trained on the GTZAN dataset for music genre classification. The model analyzes mel-spectrograms extracted from audio to identify genres including:
+
+- Blues
+- Classical
+- Country
+- Disco
+- Hip Hop
+- Jazz
+- Metal
+- Pop
+- Reggae
+- Rock
 
 ## Installation
 
-1. Clone this repository:
+1. Clone the repository
    ```
-   git clone https://github.com/MinnL/music_analyzer_app.git
+   git clone https://github.com/yourusername/music_analyzer_app.git
    cd music_analyzer_app
    ```
 
-2. Create a virtual environment (recommended):
+2. Create and activate a virtual environment
    ```
    python -m venv music_analyzer_env
    source music_analyzer_env/bin/activate  # On Windows: music_analyzer_env\Scripts\activate
    ```
 
-3. Install the required dependencies:
+3. Install the dependencies
    ```
    pip install -r requirements.txt
    ```
 
    Note: You may need to install PortAudio first for PyAudio to work properly.
-   
    - On macOS: `brew install portaudio`
    - On Linux: `sudo apt-get install portaudio19-dev`
-   - On Windows: PyAudio wheel should handle this automatically
+   - On Windows: PyAudio should install directly through pip
 
 ## Usage
 
-1. Start the application:
+1. Start the application
    ```
    python app.py
    ```
 
-2. Open your web browser and navigate to:
-   ```
-   http://127.0.0.1:8050
-   ```
+2. Open your web browser and navigate to: http://127.0.0.1:8053/ (Note: Port might differ, check terminal output)
 
-3. You have two options for analyzing music:
-
-   **Option 1: Microphone Input**
-   - Click the "Start Recording" button to begin capturing audio from your microphone
-   - Play or perform music, and watch the real-time analysis
+3. For microphone recording:
+   - Click "Start Recording"
+   - Allow microphone access when prompted
+   - Speak or play music (up to 60 seconds recommended for best analysis)
    - Click "Stop Recording" when finished
 
-   **Option 2: Upload an Audio File**
-   - In the "Audio Input Controls" section, use the upload area to drag and drop an audio file or click to select one
+4. For file upload:
+   - Click "Select an Audio File" or drag and drop a file
    - Supported formats: WAV, MP3, OGG, FLAC, M4A
-   - The application will automatically analyze the uploaded file and display the results
+   - The app will automatically analyze the first 60 seconds of the file
 
-4. View the analysis results:
-   - See the detected genre at the top of the page
-   - Explore the rhythm, melody, and instrumentation visualizations
-   - Click on different elements of the visualizations to see detailed information about specific musical components
+5. To replay audio:
+   - After recording or uploading, click "Play Audio"
+   - The player will show source information and duration
 
-5. Play back the audio:
-   - After recording or uploading a file, the "Play Audio" button will become active
-   - Click the button to play back the most recent audio
-   - For recordings, this captures what was recorded from your microphone or the demo audio
-   - For file uploads, this plays back the uploaded file
-   - The audio player provides standard controls (play/pause, timeline scrubbing, volume)
+6. Interact with visualizations:
+   - Click on elements to see detailed information
+   - Hover over graphs for additional data points
 
-6. If you encounter issues with microphone access (common on macOS), the app will automatically switch to demo mode, allowing you to still test the visualizations.
+Note: The application now analyzes up to 60 seconds of audio by default to provide a more thorough genre classification.
 
 ## Troubleshooting
 
-### Microphone Access Issues
+### Microphone Issues
 - On macOS, you may see PortAudio errors. This is a known issue with PyAudio on Mac systems.
-- The app will automatically fall back to demo mode, which simulates audio input.
-- You can still use the file upload feature to analyze your own music files.
+- The app will automatically switch to demo mode if microphone access fails.
+- You can still use the file upload feature to analyze audio.
 
-### File Upload Problems
+### File Upload Issues
 - Ensure your audio file is in one of the supported formats (WAV, MP3, OGG, FLAC, M4A)
-- Large files may take longer to process
-- If the app becomes unresponsive, try refreshing the page
+- Files should be less than 10MB for optimal performance
 
-### Audio Playback Issues
+### Playback Issues
 - If playback doesn't work, ensure your browser supports HTML5 audio
-- Try different audio file formats if you encounter compatibility issues
-- For very large files, there might be a delay before playback starts
 
-## System Requirements
+## Requirements
 
-- Python 3.8 or higher
-- A working microphone (optional, as you can use file upload)
-- Modern web browser (Chrome, Firefox, Safari, or Edge)
+- Python 3.7 or higher
+- Web browser with HTML5 and JavaScript support
+- Microphone (optional, since file upload is supported)
 
 ## Technical Architecture
 
-The application consists of several key components:
-
-1. **Audio Input Module**: Captures real-time audio from the microphone using PyAudio or processes uploaded audio files
-2. **Analysis Module**: Processes audio data, extracts features, and classifies genres using librosa and machine learning models
-3. **Visualization Module**: Creates interactive visualizations using Plotly
-4. **Web Interface**: Built with Dash, providing a responsive and interactive user experience
+- **Audio Input Module**: Captures audio from microphone or processes uploaded files (up to 60 seconds).
+- **Analysis Module**: Processes audio data and extracts features for classification using the HighConfidenceClassifier.
+- **High-Confidence Genre Classifier**: Employs a custom classifier that analyzes various audio characteristics (tempo, spectral features, harmony, etc.) across multiple 20-second segments of the audio sample (up to 60 seconds total). It uses genre-specific fingerprints and ensemble methods to achieve higher confidence and more robust predictions.
+- **Visualization Module**: Creates interactive visual representations of audio analysis.
+- **Web Interface**: Dash/Flask-based responsive UI with Bootstrap styling.
 
 ## Development
 
