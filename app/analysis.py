@@ -10,6 +10,8 @@ from .models.advanced_genre_classifier import AdvancedGenreClassifier
 import time
 import hashlib
 from .models.high_confidence_classifier import HighConfidenceClassifier
+from dash import html
+from .models.instrument_detector import InstrumentDetector
 
 class MusicAnalyzer:
     """
@@ -40,6 +42,9 @@ class MusicAnalyzer:
         
         # Initialize genre classifier to None
         self.genre_classifier = None
+        
+        # Initialize instrument detector
+        self.instrument_detector = InstrumentDetector()
         
         # Initialize component descriptions (for UI details)
         self.component_descriptions = {
@@ -81,6 +86,70 @@ class MusicAnalyzer:
                 "jazz": "Often includes saxophone, trumpet, piano, double bass, and drums.",
                 "hip-hop": "Features drum machines, samplers, turntables, and often digital production.",
                 "metal": "Heavy distorted guitars, aggressive drums, bass, and often harsh vocals."
+            }
+        }
+        
+        # Genre descriptions and characteristics
+        self.genre_descriptions = {
+            'blues': {
+                'description': "Blues is characterized by its distinctive 'blue' notes, call-and-response patterns, and emotional expression.",
+                'rhythm': "Typically steady, moderate tempo with shuffle or straight patterns, often using 12-bar form.",
+                'melody': "Features flattened 'blue' notes, vocal-like bending, and expressive microtonal variations.",
+                'instrumentation': "Often includes guitar, harmonica, piano, bass, and drums with emphasis on guitar solos and vocals."
+            },
+            'classical': {
+                'description': "Classical music encompasses a broad period of Western art music with formal structures and orchestral arrangements.",
+                'rhythm': "Precise rhythmic patterns that vary from slow, measured tempos to complex, faster movements.",
+                'melody': "Complex, fully developed melodic themes with formal structure and harmonic richness.",
+                'instrumentation': "Full orchestra with strings, woodwinds, brass, and percussion sections, often with featured solo instruments."
+            },
+            'country': {
+                'description': "Country music originates from American folk and western traditions with storytelling lyrics and distinctive vocal styles.",
+                'rhythm': "Steady, moderate tempos with clear beat patterns, often incorporating elements of folk and dance rhythms.",
+                'melody': "Simple, memorable melodic lines emphasizing storytelling, often with distinctive twang in vocal delivery.",
+                'instrumentation': "Traditional acoustic instruments like guitar, fiddle, banjo, steel guitar, with modern country adding electric elements."
+            },
+            'disco': {
+                'description': "Disco emerged in the 1970s as dance music characterized by steady beats, orchestral elements, and infectious energy.",
+                'rhythm': "Driving four-on-the-floor beat (bass drum on every beat) at 110-130 BPM, with prominent hi-hats.",
+                'melody': "Catchy vocal hooks and melodic phrases designed for danceability and mass appeal.",
+                'instrumentation': "Blend of orchestra, electric bass with emphatic lines, synthesizers, and rhythm guitar with characteristic wah-wah effects."
+            },
+            'hiphop': {
+                'description': "Hip-hop centers around rhythmic vocals delivered over beats, with origins in urban African American communities.",
+                'rhythm': "Strong beats with emphasis on bass, often using sampled or programmed drum patterns with syncopation.",
+                'melody': "Often uses samples from other songs, with melodic elements supporting rhythmic vocal delivery.",
+                'instrumentation': "Drum machines, samplers, turntables, synthesizers, with modern production incorporating various electronic elements."
+            },
+            'jazz': {
+                'description': "Jazz is known for improvisation, syncopation, swing feel, and complex harmonies developed from African American musical traditions.",
+                'rhythm': "Swung rhythms with emphasis on off-beats, or complex polyrhythms in more advanced forms.",
+                'melody': "Improvisation over chord progressions, with blue notes, modal explorations, and complex phrases.",
+                'instrumentation': "Typically includes saxophone, trumpet, piano, double bass, and drums, with various combinations in different jazz subgenres."
+            },
+            'metal': {
+                'description': "Metal is characterized by heavily distorted guitars, emphatic beats, dense sound, and often aggressive or virtuosic performance.",
+                'rhythm': "Driving rhythms, often with double bass drums, complex time signatures in progressive forms.",
+                'melody': "Power chords, guitar solos, vocal styles ranging from clean to growled or screamed.",
+                'instrumentation': "Heavy distorted guitars, aggressive drums, bass, and vocals, often with technical, virtuosic playing."
+            },
+            'pop': {
+                'description': "Pop music aims for mass appeal with catchy hooks, simple structures, and accessible sounds that reflect contemporary trends.",
+                'rhythm': "Clear, steady beats emphasizing danceability, typically between 90-130 BPM.",
+                'melody': "Memorable, repetitive hooks and chorus sections designed for easy listening and sing-along appeal.",
+                'instrumentation': "Varies with trends, combining electronic elements, programmed drums, and conventional instruments with polished production."
+            },
+            'reggae': {
+                'description': "Reggae originated in Jamaica with distinctive offbeat rhythms, bass-heavy sound, and often socially conscious lyrics.",
+                'rhythm': "Emphasis on the offbeat ('skank'), with bass playing a central role in defining the rhythm.",
+                'melody': "Often simple, memorable melodic lines delivered with distinctive Jamaican vocal styles.",
+                'instrumentation': "Emphasizes bass guitar and drums ('riddim'), with rhythm guitar playing offbeat chords, organs, and horns."
+            },
+            'rock': {
+                'description': "Rock music is centered around electric guitar, strong beats, and often rebellious themes, evolved from rock and roll.",
+                'rhythm': "Strong backbeat (emphasis on beats 2 and 4), typically in 4/4 time with variations in tempo and intensity.",
+                'melody': "Guitar-driven riffs, vocal melodies ranging from simple to complex, often with verse-chorus structure.",
+                'instrumentation': "Electric guitars, bass guitar, drums, and vocals, with various additions depending on subgenre."
             }
         }
         
@@ -484,12 +553,13 @@ class MusicAnalyzer:
             
         return self.genres[genre_idx], confidence
         
-    def analyze(self, audio_data):
+    def analyze(self, audio_data, debug_instruments=False):
         """
         Analyze audio data to classify genre and extract components
         
         Args:
             audio_data: Numpy array of audio samples
+            debug_instruments: Whether to print debug information for instrument detection
             
         Returns:
             Tuple of (genre, confidence, components)
@@ -502,7 +572,7 @@ class MusicAnalyzer:
         
         # Check if complete analysis is in cache
         audio_hash = hash(audio_segment.tobytes())
-        if audio_hash in self.analysis_cache and 'components' in self.analysis_cache[audio_hash]:
+        if audio_hash in self.analysis_cache and 'components' in self.analysis_cache[audio_hash] and not debug_instruments:
             genre = self.analysis_cache[audio_hash]['genre']
             confidence = self.analysis_cache[audio_hash]['confidence']
             components = self.analysis_cache[audio_hash]['components']
@@ -517,6 +587,15 @@ class MusicAnalyzer:
         
         # Analyze components
         components = self.analyze_components(features)
+        
+        # Detect instruments - new addition
+        instruments = self.instrument_detector.detect_instruments(
+            audio_segment, 
+            self.sample_rate, 
+            genre, 
+            debug=debug_instruments
+        )
+        components['instruments'] = instruments
         
         # Cache the complete analysis
         if audio_hash not in self.analysis_cache:
@@ -544,7 +623,7 @@ class MusicAnalyzer:
             click_data: Data from click event on visualization
             
         Returns:
-            HTML content with detailed description
+            Dash HTML content with detailed description
         """
         # Extract relevant information from click_data
         if not click_data or 'points' not in click_data or not click_data['points']:
@@ -569,23 +648,188 @@ class MusicAnalyzer:
         
         # For context related to the current genre, provide genre-specific descriptions
         # This would be enhanced in a real implementation to show the most relevant genre
-        genre_desc = ""
-        genre_examples = [g for g in self.genres if g in self.component_descriptions[component_type]]
+        genre_examples = []
+        example_genres = [g for g in self.genres if g in self.component_descriptions[component_type]]
         
-        if genre_examples:
+        if example_genres:
             # Take up to 3 genre examples
-            for genre in genre_examples[:3]:
+            for genre in example_genres[:3]:
                 if genre in self.component_descriptions[component_type]:
-                    genre_desc += f"<p><strong>{genre.capitalize()}:</strong> {self.component_descriptions[component_type][genre]}</p>"
+                    genre_examples.append(
+                        html.P([
+                            html.Strong(f"{genre.capitalize()}: "), 
+                            self.component_descriptions[component_type][genre]
+                        ])
+                    )
                     
         # Construct HTML content
-        html_content = f"""
-        <div>
-            <h4>{feature.replace('_', ' ').title()}</h4>
-            <p>{general_desc}</p>
-            <h5>Genre Examples:</h5>
-            {genre_desc}
-        </div>
-        """
+        content = [
+            html.H4(feature.replace('_', ' ').title()),
+            html.P(general_desc),
+            html.H5("Genre Examples:")
+        ]
         
-        return html_content 
+        # Add genre examples if available
+        if genre_examples:
+            content.extend(genre_examples)
+        else:
+            content.append(html.P("No specific examples available."))
+        
+        return html.Div(content)
+
+    def get_genre_explanation(self, genre, components):
+        """
+        Get detailed explanation of why audio was classified as a specific genre
+        
+        Args:
+            genre: The classified genre
+            components: Dictionary of analyzed components (rhythm, melody, instrumentation)
+            
+        Returns:
+            Explanation text formatted for Dash
+        """
+        # If genre is not in our descriptions or not a valid genre, return basic message
+        if genre not in self.genre_descriptions:
+            return [
+                html.P([f"The audio was classified as ", html.Strong(genre), ", but detailed explanation is not available for this genre."])
+            ]
+        
+        # Get genre description
+        genre_info = self.genre_descriptions[genre]
+        
+        # Create basic explanation
+        explanation = [
+            html.H4(f"Why was this classified as {genre.capitalize()}?"),
+            html.P(genre_info['description']),
+            
+            html.H5("Key Characteristics:"),
+            html.Ul([
+                html.Li([html.Strong("Rhythm:"), f" {genre_info['rhythm']}"]),
+                html.Li([html.Strong("Melody:"), f" {genre_info['melody']}"]),
+                html.Li([html.Strong("Instrumentation:"), f" {genre_info['instrumentation']}"])
+            ])
+        ]
+        
+        # Add specific component matches if available
+        features_list = []
+        
+        if 'rhythm' in components and components['rhythm']:
+            rhythm = components['rhythm']
+            tempo = rhythm.get('tempo', 0)
+            tempo_category = rhythm.get('tempo_category', 'Unknown')
+            complexity = rhythm.get('complexity_category', 'Unknown')
+            
+            if genre == 'disco' and tempo >= 110 and tempo <= 130:
+                features_list.append(html.Li(f"Tempo of {tempo:.1f} BPM matches typical disco range (110-130 BPM)"))
+            elif genre == 'metal' and tempo >= 100:
+                features_list.append(html.Li(f"Faster tempo of {tempo:.1f} BPM aligns with metal's driving rhythms"))
+            elif genre == 'blues' and tempo >= 60 and tempo <= 100:
+                features_list.append(html.Li(f"Moderate tempo of {tempo:.1f} BPM is characteristic of blues"))
+            else:
+                features_list.append(html.Li(f"Tempo: {tempo:.1f} BPM ({tempo_category})"))
+                
+            features_list.append(html.Li(f"Rhythm complexity: {complexity}"))
+            
+        if 'melody' in components and components['melody']:
+            melody = components['melody']
+            modality = melody.get('modality', 'Unknown')
+            variety = melody.get('variety_category', 'Unknown')
+            dominant_notes = ', '.join(melody.get('dominant_notes', ['Unknown']))
+            
+            features_list.append(html.Li(f"Melodic key/mode: {modality}"))
+            
+            if genre == 'jazz' and variety == 'High':
+                features_list.append(html.Li("High pitch variety is typical of jazz's complex melodic structure"))
+            elif genre == 'pop' and variety == 'Medium':
+                features_list.append(html.Li("Medium pitch variety aligns with pop's accessible melodic approach"))
+            else:
+                features_list.append(html.Li(f"Pitch variety: {variety}"))
+                
+            features_list.append(html.Li(f"Dominant notes: {dominant_notes}"))
+            
+        if 'instrumentation' in components and components['instrumentation']:
+            instrumentation = components['instrumentation']
+            brightness = instrumentation.get('brightness_category', 'Unknown')
+            complexity = instrumentation.get('complexity_category', 'Unknown')
+            
+            if genre == 'metal' and brightness == 'Bright/Sharp':
+                features_list.append(html.Li("Bright/sharp timbre consistent with metal's distorted guitar sound"))
+            elif genre == 'classical' and complexity == 'Complex/Rich':
+                features_list.append(html.Li("Complex/rich timbral texture matches classical orchestration"))
+            else:
+                features_list.append(html.Li(f"Timbral brightness: {brightness}"))
+                features_list.append(html.Li(f"Timbral complexity: {complexity}"))
+        
+        # Add detected features section if we have any features
+        if features_list:
+            explanation.extend([
+                html.H5("Detected Features:"),
+                html.Ul(features_list)
+            ])
+            
+        return html.Div(explanation, className="genre-explanation")
+        
+    def get_available_genres(self):
+        """
+        Get information about available genres in the model
+        
+        Returns:
+            Content formatted for Dash
+        """
+        genre_cards = []
+        
+        for genre in self.genres:
+            description = self.genre_descriptions.get(genre, {}).get('description', 'No description available.')
+            genre_cards.append(
+                html.Div([
+                    html.H5(genre.capitalize()),
+                    html.P(description)
+                ], className="genre-card")
+            )
+            
+        return html.Div([
+            html.H4("Genres Available in Our Model"),
+            html.P("The current model can classify audio into the following 10 genres:"),
+            html.Div(genre_cards, className="genre-grid")
+        ], className="available-genres")
+
+    def get_instrument_details(self, instruments, genre):
+        """
+        Format instrument detection results for display
+        
+        Args:
+            instruments: List of detected instruments with their properties
+            genre: The detected genre
+            
+        Returns:
+            Dash HTML for displaying instrument information
+        """
+        if not instruments or len(instruments) == 0:
+            return html.Div([
+                html.P("No instruments were confidently detected in this audio.")
+            ], className="instrument-details")
+            
+        # Create content for each detected instrument
+        instrument_items = []
+        for instrument in instruments:
+            instrument_items.append(html.Div([
+                html.H5([
+                    instrument['name'], 
+                    html.Span(f" ({instrument['confidence']:.1f}%)", 
+                             className="confidence-score")
+                ]),
+                html.P(instrument['description']),
+                html.P([
+                    html.Strong("Role in music: "), 
+                    instrument['role']
+                ])
+            ], className="instrument-item"))
+            
+        # Assemble the complete content
+        content = [
+            html.H4(f"Detected Instruments in {genre.capitalize()}"),
+            html.P("The following instruments were identified in the audio recording:"),
+            html.Div(instrument_items, className="instrument-list")
+        ]
+        
+        return html.Div(content, className="instrument-details") 

@@ -1,5 +1,5 @@
 import dash
-from dash import html, dcc, Input, Output, State, callback
+from dash import html, dcc, Input, Output, State, callback, ALL, MATCH
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 import numpy as np
@@ -24,9 +24,9 @@ server = app.server
 app.title = "Genra - Music Analysis & Genre Classification"  # Update the browser tab title too
 
 # Initialize audio input and analyzer
-audio_input = AudioInput()
+audio_input = AudioInput(demo_mode_if_error=True)
 # Configure to use the original GenreClassifier with GTZAN weights
-music_analyzer = MusicAnalyzer(use_gtzan_model=True) 
+music_analyzer = MusicAnalyzer(use_gtzan_model=True, sample_rate=audio_input.sample_rate) 
 
 # Define layout
 app.layout = dbc.Container([
@@ -137,7 +137,21 @@ app.layout = dbc.Container([
                 dbc.CardHeader("Genre Classification", className="section-title"),
                 dbc.CardBody([
                     html.H3(id="genre-display", className="text-center"),
-                    html.Div(id="genre-confidence", className="text-center")
+                    html.Div(id="genre-confidence", className="text-center"),
+                    # Add the genre explanation section
+                    html.Div(id="genre-explanation", className="mt-4")
+                ])
+            ])
+        ], width=12)
+    ], className="mb-4"),
+    
+    # Add instrument detection section
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Instrument Detection", className="section-title"),
+                dbc.CardBody([
+                    html.Div(id="instrument-details")
                 ])
             ])
         ], width=12)
@@ -179,7 +193,39 @@ app.layout = dbc.Container([
                 ])
             ])
         ], width=12)
+    ], className="mb-4"),
+    
+    # Add available genres section
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Available Genres", className="section-title"),
+                dbc.CardBody([
+                    # Collapsible section for available genres
+                    dbc.Collapse(
+                        id="genres-collapse",
+                        is_open=False,
+                        children=[
+                            html.Div(id="available-genres")
+                        ]
+                    ),
+                    # Button to toggle collapse
+                    dbc.Button(
+                        "Show Available Genres",
+                        id="genres-button",
+                        className="mt-2",
+                        color="info"
+                    )
+                ])
+            ])
+        ], width=12)
     ]),
+    
+    # Debug mode indicator
+    html.Div(
+        html.Span(id="debug-indicator", className="debug-dot"),
+        style={"position": "fixed", "bottom": "5px", "right": "5px", "zIndex": 1000}
+    ),
     
     # Hidden elements for storing state
     dcc.Store(id="audio-data"),
@@ -193,7 +239,9 @@ app.layout = dbc.Container([
     # Disabled by default - only used for file mode
     dcc.Interval(id="update-interval", interval=2000, n_intervals=0, disabled=True),  # Only used for file mode
     # Timer update interval - updates the recording timer display
-    dcc.Interval(id="timer-interval", interval=100, n_intervals=0, disabled=True)  # 100ms for smooth timer updates
+    dcc.Interval(id="timer-interval", interval=100, n_intervals=0, disabled=True),  # 100ms for smooth timer updates
+    # Add a debug mode store component
+    dcc.Store(id="debug-instrument-mode", data=False),
 ], fluid=True)
 
 # Callbacks
@@ -281,15 +329,21 @@ def process_uploaded_file(contents, filename):
      Output("last-analysis-time", "data"),
      Output("analysis-needed", "data", allow_duplicate=True),
      Output("recording-status", "children", allow_duplicate=True),
-     Output("analysis-results", "data")],
+     Output("analysis-results", "data"),
+     Output("genre-explanation", "children"),  # Genre explanation
+     Output("available-genres", "children"),   # Available genres
+     Output("instrument-details", "children")],  # Instrument detection - new addition
     [Input("update-interval", "n_intervals"),
      Input("analysis-needed", "data")],
     [State("file-mode-store", "data"),
      State("last-analysis-time", "data"),
-     State("analysis-results", "data")],
+     State("analysis-results", "data"),
+     State("genres-collapse", "is_open"),
+     State("debug-instrument-mode", "data")],  # Add debug mode state
     prevent_initial_call=True
 )
-def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time, prev_analysis_results):
+def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time, 
+                   prev_analysis_results, genres_open, debug_instruments):
     ctx = dash.callback_context
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
     
@@ -300,17 +354,23 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
     # Or if we're in file mode with interval updates
     elif triggered_id == "update-interval":
         if not file_mode:
-            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, dash.no_update
-        
-        # Only analyze if enough time has passed since last analysis (3 seconds minimum)
+            return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
+                    dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
+                    dash.no_update, dash.no_update, dash.no_update, dash.no_update)
+    
+    # Only analyze if enough time has passed since last analysis (3 seconds minimum)
         if time.time() - last_analysis_time < 3 and last_analysis_time > 0:
-            # Return previous state without updating
-            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, dash.no_update
+        # Return previous state without updating
+            return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
+                    dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
+                    dash.no_update, dash.no_update, dash.no_update, dash.no_update)
             
         analyzing_alert_visible = True
     else:
         # No need to analyze
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, dash.no_update
+        return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
+                dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update)
     
     # Get latest audio data
     audio_data = audio_input.get_latest_data()
@@ -322,14 +382,20 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
             "components": {
                 "rhythm": {},
                 "melody": {},
-                "instrumentation": {}
+                "instrumentation": {},
+                "instruments": []  # Empty instruments list for initial state
             }
         }
-        return "No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, time.time(), False, "No audio data to analyze", empty_result
+        # Get available genres information regardless of analysis
+        available_genres = music_analyzer.get_available_genres()
+        
+        return ("No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, time.time(), 
+                False, "No audio data to analyze", empty_result, "No analysis available", available_genres,
+                "No instrument data available")
     
     # Analyze audio
     print(f"Analyzing {len(audio_data) / audio_input.sample_rate:.2f} seconds of audio...")
-    genre, confidence, components = music_analyzer.analyze(audio_data)
+    genre, confidence, components = music_analyzer.analyze(audio_data, debug_instruments=debug_instruments)
     print(f"Analysis complete. Genre: {genre}, Confidence: {confidence:.2f}%")
     
     # Store the results for visualization
@@ -367,6 +433,7 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
         play_button_disabled = False
     else:
         print("No audio available for playback")
+        play_button_disabled = True
     
     # Hide analyzing alert
     analyzing_alert_visible = False
@@ -374,7 +441,19 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
     # Reset analysis needed flag and update the status text
     status_text = f"Analysis complete. Detected genre: {genre} (Confidence: {confidence:.2f}%). Click Play Audio to listen."
     
-    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, play_button_disabled, analyzing_alert_visible, time.time(), False, status_text, analysis_results
+    # Generate genre explanation
+    genre_explanation = music_analyzer.get_genre_explanation(genre, components)
+    
+    # Get available genres information
+    available_genres = music_analyzer.get_available_genres()
+    
+    # Get instrument details - new addition
+    instruments = components.get('instruments', [])
+    instrument_details = music_analyzer.get_instrument_details(instruments, genre)
+    
+    return (genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, 
+            play_button_disabled, analyzing_alert_visible, time.time(), False, status_text, 
+            analysis_results, genre_explanation, available_genres, instrument_details)
 
 @callback(
     [Output("audio-playback-data", "data"),
@@ -530,6 +609,48 @@ def update_recording_timer(n_intervals, timer_data):
     
     # Return formatted time
     return f"{minutes}:{seconds:02d}"
+
+# Add new callback for genres section toggle
+@callback(
+    [Output("genres-collapse", "is_open"),
+     Output("genres-button", "children")],
+    [Input("genres-button", "n_clicks")],
+    [State("genres-collapse", "is_open")],
+    prevent_initial_call=True
+)
+def toggle_genres_section(n_clicks, is_open):
+    if n_clicks:
+        # Toggle the collapse state
+        new_state = not is_open
+        # Update the button text based on state
+        button_text = "Hide Available Genres" if new_state else "Show Available Genres"
+        return new_state, button_text
+    return is_open, "Show Available Genres"
+
+# Add a callback to toggle debug mode for instrument detection
+@callback(
+    Output("debug-instrument-mode", "data"),
+    Input("play-button", "n_clicks"),
+    State("debug-instrument-mode", "data"),
+    prevent_initial_call=True
+)
+def toggle_debug_mode(n_clicks, current_debug_state):
+    """Toggle debug mode for instrument detection with a special button combination"""
+    # Check if this is a special click pattern (double click)
+    if n_clicks and n_clicks % 5 == 0:  # Every 5th click
+        return not current_debug_state
+    return current_debug_state
+
+# Add callback for debug indicator
+@callback(
+    Output("debug-indicator", "style"),
+    Input("debug-instrument-mode", "data")
+)
+def update_debug_indicator(debug_mode):
+    if debug_mode:
+        return {"width": "8px", "height": "8px", "borderRadius": "50%", "backgroundColor": "red", "display": "inline-block"}
+    else:
+        return {"width": "8px", "height": "8px", "borderRadius": "50%", "backgroundColor": "transparent", "display": "inline-block"}
 
 if __name__ == "__main__":
     app.run(debug=True, port=8053) 
