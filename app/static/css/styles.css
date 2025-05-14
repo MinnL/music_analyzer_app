@@ -121,4 +121,15 @@ h1, h2, h3, h4, h5, h6 {
     padding: 1rem;
     font-size: 1rem;
     line-height: 1.5;
+}
+
+/* Recording timer styling */
+#timer-display {
+    font-size: 1.1rem;
+}
+
+#recording-timer {
+    font-size: 1.3rem;
+    font-family: monospace;
+    margin-left: 8px;
 } 

@@ -7,6 +7,7 @@ import base64
 from io import BytesIO
 import os
 import json
+import time
 
 from app.audio_input import AudioInput
 from app.analysis import MusicAnalyzer
@@ -88,6 +89,17 @@ app.layout = dbc.Container([
                         color="info",
                         is_open=False,
                         className="mt-3"
+                    ),
+                    # Add recording timer display
+                    dbc.Alert(
+                        [
+                            html.Span("Recording time: "),
+                            html.Span("0:00", id="recording-timer", className="fw-bold")
+                        ],
+                        id="timer-display",
+                        color="danger",
+                        is_open=False,
+                        className="mt-3 d-flex align-items-center"
                     ),
                     # Add loading indicator
                     dbc.Alert(
@@ -177,8 +189,11 @@ app.layout = dbc.Container([
     dcc.Store(id="last-analysis-time", data=0),
     dcc.Store(id="analysis-needed", data=False),
     dcc.Store(id="analysis-results", data=None),  # Store analysis results for visualization updates
+    dcc.Store(id="recording-time", data={"start_time": 0, "recording": False}),  # Store for recording timer
     # Disabled by default - only used for file mode
-    dcc.Interval(id="update-interval", interval=2000, n_intervals=0, disabled=True)  # Only used for file mode
+    dcc.Interval(id="update-interval", interval=2000, n_intervals=0, disabled=True),  # Only used for file mode
+    # Timer update interval - updates the recording timer display
+    dcc.Interval(id="timer-interval", interval=100, n_intervals=0, disabled=True)  # 100ms for smooth timer updates
 ], fluid=True)
 
 # Callbacks
@@ -192,7 +207,10 @@ app.layout = dbc.Container([
      Output("file-mode-alert", "is_open"),
      Output("file-mode-store", "data"),
      Output("file-mode-alert", "children"),
-     Output("analysis-needed", "data")],
+     Output("analysis-needed", "data"),
+     Output("timer-interval", "disabled"),
+     Output("timer-display", "is_open"),
+     Output("recording-time", "data")],
     [Input("record-button", "n_clicks"),
      Input("stop-button", "n_clicks")],
     [State("demo-mode-store", "data"),
@@ -207,19 +225,23 @@ def toggle_recording(start_clicks, stop_clicks, demo_mode, file_mode):
         print("Recording started... (up to 60 seconds)")
         # Check if we're in demo mode
         demo_mode = audio_input.demo_mode
-        status_text = "Recording in progress... (up to 60 seconds)" if not demo_mode else "Demo mode active (using synthesized audio)"
+        status_text = "Recording in progress..." if not demo_mode else "Demo mode active (using synthesized audio)"
+        # Start the timer
+        timer_data = {"start_time": time.time(), "recording": True}
         # When starting recording, exit file mode and don't analyze yet
-        return True, False, True, status_text, demo_mode, demo_mode, False, False, "", False
+        return True, False, True, status_text, demo_mode, demo_mode, False, False, "", False, False, True, timer_data
     elif triggered_id == "stop-button":
         print("Stopping recording and saving audio...")
         audio_input.stop_recording()
         print("Recording stopped...")
         # Make sure audio is saved for playback
         print(f"Audio available for playback: {audio_input.current_audio is not None}")
+        # Stop the timer
+        timer_data = {"start_time": 0, "recording": False}
         # Signal that we need to analyze the audio
-        return False, True, True, "Recording stopped. Analyzing audio...", False, False, False, False, "", True
+        return False, True, True, "Recording stopped. Analyzing audio...", False, False, False, False, "", True, True, False, timer_data
     
-    return False, True, True, "", False, False, False, False, "", False
+    return False, True, True, "", False, False, False, False, "", False, True, False, {"start_time": 0, "recording": False}
 
 @callback(
     [Output("upload-status", "children"),
@@ -268,8 +290,6 @@ def process_uploaded_file(contents, filename):
     prevent_initial_call=True
 )
 def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time, prev_analysis_results):
-    import time
-    current_time = time.time()
     ctx = dash.callback_context
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
     
@@ -283,7 +303,7 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
             return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, dash.no_update
         
         # Only analyze if enough time has passed since last analysis (3 seconds minimum)
-        if current_time - last_analysis_time < 3 and last_analysis_time > 0:
+        if time.time() - last_analysis_time < 3 and last_analysis_time > 0:
             # Return previous state without updating
             return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, dash.no_update
             
@@ -305,7 +325,7 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
                 "instrumentation": {}
             }
         }
-        return "No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, current_time, False, "No audio data to analyze", empty_result
+        return "No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, time.time(), False, "No audio data to analyze", empty_result
     
     # Analyze audio
     print(f"Analyzing {len(audio_data) / audio_input.sample_rate:.2f} seconds of audio...")
@@ -354,7 +374,7 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
     # Reset analysis needed flag and update the status text
     status_text = f"Analysis complete. Detected genre: {genre} (Confidence: {confidence:.2f}%). Click Play Audio to listen."
     
-    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, play_button_disabled, analyzing_alert_visible, current_time, False, status_text, analysis_results
+    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, play_button_disabled, analyzing_alert_visible, time.time(), False, status_text, analysis_results
 
 @callback(
     [Output("audio-playback-data", "data"),
@@ -490,6 +510,26 @@ def update_visualizations(analysis_results):
 def stop_recording_and_analyze(n_clicks):
     print("Stop button clicked - triggering analysis...")
     return True
+
+@callback(
+    Output("recording-timer", "children"),
+    [Input("timer-interval", "n_intervals")],
+    [State("recording-time", "data")],
+    prevent_initial_call=True
+)
+def update_recording_timer(n_intervals, timer_data):
+    if not timer_data or not timer_data.get("recording", False):
+        return "0:00"
+    
+    # Calculate elapsed time
+    elapsed_seconds = time.time() - timer_data.get("start_time", 0)
+    
+    # Format as minutes:seconds
+    minutes = int(elapsed_seconds // 60)
+    seconds = int(elapsed_seconds % 60)
+    
+    # Return formatted time
+    return f"{minutes}:{seconds:02d}"
 
 if __name__ == "__main__":
     app.run(debug=True, port=8053) 
