@@ -1,0 +1,92 @@
+/* Custom styles for Genra application */
+
+/* Title styling */
+h1.display-3 {
+    font-weight: 700;
+    letter-spacing: 1px;
+    background: linear-gradient(45deg, #3a7bd5, #00d2ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Slogan styling */
+h4.text-muted {
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    font-style: italic;
+}
+
+/* Card styling */
+.card {
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+    background-color: rgba(58, 123, 213, 0.8);
+    color: white;
+    font-weight: 600;
+    font-size: 1.1rem;
+    padding: 12px 15px;
+    border-top-left-radius: 10px !important;
+    border-top-right-radius: 10px !important;
+}
+
+/* Button styling */
+.btn {
+    border-radius: 5px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Animation for recording indicator */
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+#recording-indicator .pulse {
+    width: 20px;
+    height: 20px;
+    background-color: #ff3b30;
+    border-radius: 50%;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    animation: pulse 1.5s infinite ease-in-out;
+}
+
+/* Gradient backgrounds for genre confidence */
+.genre-confidence-high {
+    background: linear-gradient(45deg, #43cea2, #185a9d);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 20px;
+}
+
+.genre-confidence-medium {
+    background: linear-gradient(45deg, #ffb347, #ffcc33);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 20px;
+}
+
+.genre-confidence-low {
+    background: linear-gradient(45deg, #ee9ca7, #ffdde1);
+    color: #333;
+    padding: 5px 10px;
+    border-radius: 20px;
+} 

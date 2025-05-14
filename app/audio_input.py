@@ -11,7 +11,7 @@ import os
 from scipy import signal
 
 class AudioInput:
-    def __init__(self, sample_rate=16000, channels=1, demo_mode_if_error=True, buffer_duration=3):
+    def __init__(self, sample_rate=16000, channels=1, demo_mode_if_error=True, buffer_duration=60):
         self.sample_rate = sample_rate
         self.channels = channels
         self.demo_mode = False
@@ -92,6 +92,19 @@ class AudioInput:
     
     def stop_recording(self):
         """Stop recording audio."""
+        # If not recording, nothing to do
+        if not self.recording:
+            return
+            
+        # Save current data before stopping
+        audio_data = self.get_latest_data()
+        if audio_data is not None and len(audio_data) > 0:
+            print(f"Saving audio data before stopping: {len(audio_data)} samples")
+            # Store it for later use
+            self.current_audio = audio_data
+            self.current_audio_source = "Recorded Audio" if not self.demo_mode else "Demo Audio"
+            
+        # Now stop the recording
         self.recording = False
         if self.record_thread:
             self.record_thread.join(timeout=1.0)
@@ -198,23 +211,32 @@ class AudioInput:
     def get_latest_data(self):
         """Get latest audio data for analysis."""
         with self.lock:
-            if not self.recording and not self.file_mode:
-                return None
-            
             # For file mode, return the processed file data
             if self.file_mode and hasattr(self, 'file_audio_data'):
                 return self.file_audio_data
+                
+            # If recording is active, return buffer data    
+            if self.recording:
+                # For recording mode, return from circular buffer
+                if self.buffer_filled:
+                    # Return complete buffer with proper ordering
+                    result = np.concatenate([
+                        self.audio_buffer[self.buffer_index:],
+                        self.audio_buffer[:self.buffer_index]
+                    ])
+                    return result
+                else:
+                    # Buffer not filled yet, return what we have
+                    result = self.audio_buffer[:self.buffer_index]
+                    return result
             
-            # For recording mode, return from circular buffer
-            if self.buffer_filled:
-                # Return complete buffer with proper ordering
-                return np.concatenate([
-                    self.audio_buffer[self.buffer_index:],
-                    self.audio_buffer[:self.buffer_index]
-                ])
-            else:
-                # Buffer not filled yet, return what we have
-                return self.audio_buffer[:self.buffer_index]
+            # If not recording but we have saved audio, return that
+            if self.current_audio is not None:
+                print(f"Returning saved audio data: {len(self.current_audio)} samples")
+                return self.current_audio
+                
+            print("Not recording and not in file mode, no audio data available")
+            return None
     
     def process_uploaded_file(self, contents, filename):
         """Process an uploaded audio file."""
@@ -263,17 +285,22 @@ class AudioInput:
         with self.lock:
             if self.file_mode:
                 # File is already saved for playback
+                print("In file mode, not saving audio for playback")
                 return
             
             # Get latest data from buffer
             audio_data = self.get_latest_data()
             if audio_data is not None and len(audio_data) > 0:
+                print(f"Saving audio data for playback: {len(audio_data)} samples")
                 self.current_audio = audio_data
                 self.current_audio_source = "Recorded Audio" if not self.demo_mode else "Demo Audio"
+            else:
+                print("No audio data available to save for playback")
     
     def get_audio_for_playback(self):
         """Get audio data for the player."""
         if self.current_audio is None:
+            print("No current audio available for playback")
             return None
         
         try:
@@ -286,6 +313,7 @@ class AudioInput:
             encoded = base64.b64encode(wav_bytes).decode('ascii')
             src = f"data:audio/wav;base64,{encoded}"
             
+            print(f"Prepared audio for playback: {len(self.current_audio)/self.sample_rate:.2f} seconds")
             return {
                 "data": src,
                 "source": self.current_audio_source,

@@ -16,17 +16,21 @@ class MusicAnalyzer:
     Class for analyzing audio to identify genre and components
     """
     
-    def __init__(self, sample_rate=22050, use_high_confidence=True):
+    # Set default to use the original GTZAN-based classifier
+    def __init__(self, sample_rate=22050, use_gtzan_model=True):
         """
         Initialize the music analyzer
         
         Args:
             sample_rate: Sample rate for audio analysis
-            use_high_confidence: Whether to use the High Confidence Genre Classifier for reliable predictions
+            use_gtzan_model: Whether to use the original Genre Classifier with GTZAN weights.
         """
         # Initialize attributes
         self.sample_rate = sample_rate
-        self.use_high_confidence = use_high_confidence
+        self.use_gtzan_model = use_gtzan_model # Store the preference
+        # Remove the old flag if it exists (optional, for clarity)
+        # if hasattr(self, 'use_advanced_model'):
+        #    del self.use_advanced_model
         
         # Define genres directly in the class
         self.genres = [
@@ -90,31 +94,46 @@ class MusicAnalyzer:
         # Previous analysis results
         self.previous_analysis = None
         
-    def _load_or_init_model(self, model_path=None):
-        """Load or initialize genre classification model"""
-        if self.genre_classifier is None:
-            try:
-                # If using high confidence classifier, use that
-                if self.use_high_confidence:
-                    print("Using High Confidence Genre Classifier for reliable predictions")
-                    self.genre_classifier = HighConfidenceClassifier()
+    def _load_or_init_model(self):
+        """Load or initialize the appropriate genre classification model based on instance flags."""
+        if self.genre_classifier is not None:
+            return # Already loaded
+
+        try:
+            if hasattr(self, 'use_gtzan_model') and self.use_gtzan_model:
+                # Load the original GenreClassifier with the GTZAN weights
+                print("Using Original Genre Classifier with GTZAN pre-trained weights.")
+                model_path = "app/models/pretrained/gtzan_model.pt"
+                if os.path.exists(model_path):
+                    self.genre_classifier = GenreClassifier(model_path=model_path)
+                    print(f"Successfully loaded model from {model_path}")
                 else:
-                    # Otherwise use the original classifier with pre-trained model
-                    default_model_path = "app/models/pretrained/gtzan_model.pt"
-                    
-                    # If model_path is provided and exists, use it
-                    if model_path and os.path.exists(model_path):
-                        self.genre_classifier = GenreClassifier(model_path=model_path)
-                    # Otherwise check for default model path
-                    elif os.path.exists(default_model_path):
-                        self.genre_classifier = GenreClassifier(model_path=default_model_path)
-                    else:
-                        # Initialize with random weights if no pretrained model
-                        self.genre_classifier = GenreClassifier()
-            except Exception as e:
-                print(f"Error initializing genre classifier: {e}")
-                # Fallback to high confidence classifier
-                self.genre_classifier = HighConfidenceClassifier()
+                    print(f"ERROR: Pre-trained model file not found at {model_path}. Initializing with random weights.")
+                    self.genre_classifier = GenreClassifier() # Fallback to random weights
+
+            elif hasattr(self, 'use_advanced_model') and self.use_advanced_model:
+                 # Load the Advanced Genre Classifier (currently uses random weights)
+                 print("Using Advanced Genre Classifier (VGGish-based - currently with random weights).")
+                 self.genre_classifier = AdvancedGenreClassifier(num_genres=len(self.genres))
+                 # TODO: Implement loading of actual pre-trained weights for Advanced model if available
+
+            elif hasattr(self, 'use_high_confidence') and self.use_high_confidence:
+                 # Load the High Confidence Classifier (feature-based)
+                 print("Using High Confidence Genre Classifier (feature-based).")
+                 self.genre_classifier = HighConfidenceClassifier()
+            
+            else:
+                # Default fallback if no specific flag is set (or logic error)
+                print("Warning: No specific classifier preference set. Falling back to GTZAN model check.")
+                model_path = "app/models/pretrained/gtzan_model.pt"
+                if os.path.exists(model_path):
+                    self.genre_classifier = GenreClassifier(model_path=model_path)
+                else:
+                     self.genre_classifier = GenreClassifier() # Random weights if default fails
+
+        except Exception as e:
+            print(f"CRITICAL Error initializing genre classifier: {e}")
+            self.genre_classifier = None # Indicate failure
         
     def _init_dummy_model(self):
         """Initialize a dummy model for demonstration purposes"""
@@ -477,8 +496,8 @@ class MusicAnalyzer:
         """
         start_time = time.time()
         
-        # Use shorter audio segment for analysis (max 6 seconds)
-        max_length = min(len(audio_data), self.sample_rate * 6)
+        # Use first 30 seconds of audio for full analysis if available
+        max_length = min(len(audio_data), self.sample_rate * 30)
         audio_segment = audio_data[:max_length]
         
         # Check if complete analysis is in cache

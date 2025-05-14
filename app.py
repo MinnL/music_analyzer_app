@@ -20,21 +20,30 @@ app = dash.Dash(__name__,
                 ],
                 assets_folder='app/static')
 server = app.server
+app.title = "Genra - Music Analysis & Genre Classification"  # Update the browser tab title too
 
 # Initialize audio input and analyzer
 audio_input = AudioInput()
-music_analyzer = MusicAnalyzer(use_high_confidence=True)  # Use high confidence model for better confidence scores
+# Configure to use the original GenreClassifier with GTZAN weights
+music_analyzer = MusicAnalyzer(use_gtzan_model=True) 
 
 # Define layout
 app.layout = dbc.Container([
     dbc.Row([
-        dbc.Col(html.H1("Real-Time Music Analysis & Visualization", className="text-center mb-4"), width=12)
+        dbc.Col([
+            html.H1("Genra", className="text-center display-3 mt-4 mb-0"),
+            html.H4("Discover the Science Behind Your Sound", className="text-center text-muted mb-4"),
+            html.Div([
+                html.P("Genra analyzes your music in real-time, identifying genres and breaking down the rhythm, melody, and instrumentation components that make your sound unique.", 
+                       className="text-center lead mb-4")
+            ], className="px-4 mb-3")
+        ], width=12)
     ]),
     
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Audio Input Controls"),
+                dbc.CardHeader("Audio Input Controls", className="section-title"),
                 dbc.CardBody([
                     dbc.Row([
                         dbc.Col([
@@ -82,7 +91,7 @@ app.layout = dbc.Container([
                     ),
                     # Add loading indicator
                     dbc.Alert(
-                        "Analyzing audio... Please wait.",
+                        "Analyzing audio... This may take a moment for longer recordings.",
                         id="analyzing-alert",
                         color="secondary",
                         is_open=False,
@@ -113,7 +122,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Genre Classification"),
+                dbc.CardHeader("Genre Classification", className="section-title"),
                 dbc.CardBody([
                     html.H3(id="genre-display", className="text-center"),
                     html.Div(id="genre-confidence", className="text-center")
@@ -125,7 +134,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Rhythm Analysis"),
+                dbc.CardHeader("Rhythm Analysis", className="section-title"),
                 dbc.CardBody([
                     dcc.Graph(id="rhythm-graph")
                 ])
@@ -133,7 +142,7 @@ app.layout = dbc.Container([
         ], width=4),
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Melody Analysis"),
+                dbc.CardHeader("Melody Analysis", className="section-title"),
                 dbc.CardBody([
                     dcc.Graph(id="melody-graph")
                 ])
@@ -141,7 +150,7 @@ app.layout = dbc.Container([
         ], width=4),
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Instrumentation Analysis"),
+                dbc.CardHeader("Instrumentation Analysis", className="section-title"),
                 dbc.CardBody([
                     dcc.Graph(id="instrumentation-graph")
                 ])
@@ -152,7 +161,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Component Details"),
+                dbc.CardHeader("Component Details", className="section-title"),
                 dbc.CardBody([
                     html.Div(id="component-details")
                 ])
@@ -166,7 +175,10 @@ app.layout = dbc.Container([
     dcc.Store(id="file-mode-store", data=False),
     dcc.Store(id="audio-playback-data", data=None),
     dcc.Store(id="last-analysis-time", data=0),
-    dcc.Interval(id="update-interval", interval=2000, n_intervals=0, disabled=True)  # Reduced frequency
+    dcc.Store(id="analysis-needed", data=False),
+    dcc.Store(id="analysis-results", data=None),  # Store analysis results for visualization updates
+    # Disabled by default - only used for file mode
+    dcc.Interval(id="update-interval", interval=2000, n_intervals=0, disabled=True)  # Only used for file mode
 ], fluid=True)
 
 # Callbacks
@@ -179,7 +191,8 @@ app.layout = dbc.Container([
      Output("demo-mode-store", "data"),
      Output("file-mode-alert", "is_open"),
      Output("file-mode-store", "data"),
-     Output("file-mode-alert", "children")],
+     Output("file-mode-alert", "children"),
+     Output("analysis-needed", "data")],
     [Input("record-button", "n_clicks"),
      Input("stop-button", "n_clicks")],
     [State("demo-mode-store", "data"),
@@ -191,16 +204,22 @@ def toggle_recording(start_clicks, stop_clicks, demo_mode, file_mode):
     
     if triggered_id == "record-button":
         audio_input.start_recording()
+        print("Recording started... (up to 60 seconds)")
         # Check if we're in demo mode
         demo_mode = audio_input.demo_mode
-        status_text = "Recording in progress..." if not demo_mode else "Demo mode active (using synthesized audio)"
-        # When starting recording, exit file mode
-        return True, False, False, status_text, demo_mode, demo_mode, False, False, ""
+        status_text = "Recording in progress... (up to 60 seconds)" if not demo_mode else "Demo mode active (using synthesized audio)"
+        # When starting recording, exit file mode and don't analyze yet
+        return True, False, True, status_text, demo_mode, demo_mode, False, False, "", False
     elif triggered_id == "stop-button":
+        print("Stopping recording and saving audio...")
         audio_input.stop_recording()
-        return False, True, True, "Recording stopped.", False, False, False, False, ""
+        print("Recording stopped...")
+        # Make sure audio is saved for playback
+        print(f"Audio available for playback: {audio_input.current_audio is not None}")
+        # Signal that we need to analyze the audio
+        return False, True, True, "Recording stopped. Analyzing audio...", False, False, False, False, "", True
     
-    return False, True, True, "", False, False, False, False, ""
+    return False, True, True, "", False, False, False, False, "", False
 
 @callback(
     [Output("upload-status", "children"),
@@ -210,23 +229,24 @@ def toggle_recording(start_clicks, stop_clicks, demo_mode, file_mode):
      Output("record-button", "disabled", allow_duplicate=True),
      Output("stop-button", "disabled", allow_duplicate=True),
      Output("update-interval", "disabled", allow_duplicate=True),
-     Output("analyzing-alert", "is_open")],
+     Output("analyzing-alert", "is_open"),
+     Output("analysis-needed", "data", allow_duplicate=True)],
     [Input("upload-audio", "contents")],
     [State("upload-audio", "filename")],
     prevent_initial_call=True
 )
 def process_uploaded_file(contents, filename):
     if contents is None:
-        return "", False, False, "", False, True, True, False
+        return "", False, False, "", False, True, True, False, False
     
     # Show analyzing alert
     success, message = audio_input.process_uploaded_file(contents, filename)
     
     if success:
         alert_message = f"Analyzing file: {filename}"
-        return message, True, True, alert_message, True, True, False, True
+        return message, True, True, alert_message, True, True, False, True, True
     else:
-        return message, False, False, "", False, True, True, False
+        return message, False, False, "", False, True, True, False, False
 
 @callback(
     [Output("genre-display", "children"),
@@ -236,29 +256,68 @@ def process_uploaded_file(contents, filename):
      Output("instrumentation-graph", "figure"),
      Output("play-button", "disabled"),
      Output("analyzing-alert", "is_open", allow_duplicate=True),
-     Output("last-analysis-time", "data")],
-    [Input("update-interval", "n_intervals")],
+     Output("last-analysis-time", "data"),
+     Output("analysis-needed", "data", allow_duplicate=True),
+     Output("recording-status", "children", allow_duplicate=True),
+     Output("analysis-results", "data")],
+    [Input("update-interval", "n_intervals"),
+     Input("analysis-needed", "data")],
     [State("file-mode-store", "data"),
-     State("last-analysis-time", "data")],
+     State("last-analysis-time", "data"),
+     State("analysis-results", "data")],
     prevent_initial_call=True
 )
-def update_analysis(n_intervals, file_mode, last_analysis_time):
+def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time, prev_analysis_results):
     import time
     current_time = time.time()
+    ctx = dash.callback_context
+    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
     
-    # Only analyze if enough time has passed since last analysis (3 seconds minimum)
-    if current_time - last_analysis_time < 3 and last_analysis_time > 0:
-        # Return previous state without updating
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time
+    # First check if analysis is needed due to recording stop
+    if triggered_id == "analysis-needed" and analysis_needed:
+        print("Performing analysis after recording stopped")
+        analyzing_alert_visible = True
+    # Or if we're in file mode with interval updates
+    elif triggered_id == "update-interval":
+        if not file_mode:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, dash.no_update
+        
+        # Only analyze if enough time has passed since last analysis (3 seconds minimum)
+        if current_time - last_analysis_time < 3 and last_analysis_time > 0:
+            # Return previous state without updating
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, dash.no_update
+            
+        analyzing_alert_visible = True
+    else:
+        # No need to analyze
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, dash.no_update
     
     # Get latest audio data
     audio_data = audio_input.get_latest_data()
     
     if audio_data is None or len(audio_data) == 0:
-        return "No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, current_time
+        empty_result = {
+            "genre": "No data",
+            "confidence": 0,
+            "components": {
+                "rhythm": {},
+                "melody": {},
+                "instrumentation": {}
+            }
+        }
+        return "No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, current_time, False, "No audio data to analyze", empty_result
     
     # Analyze audio
+    print(f"Analyzing {len(audio_data) / audio_input.sample_rate:.2f} seconds of audio...")
     genre, confidence, components = music_analyzer.analyze(audio_data)
+    print(f"Analysis complete. Genre: {genre}, Confidence: {confidence:.2f}%")
+    
+    # Store the results for visualization
+    analysis_results = {
+        "genre": genre,
+        "confidence": confidence,
+        "components": components
+    }
     
     # Create visualizations
     rhythm_fig = create_rhythm_visualization(components['rhythm'])
@@ -275,13 +334,27 @@ def update_analysis(n_intervals, file_mode, last_analysis_time):
     else:
         genre_display = genre
     
-    # Enable play button if we have audio data
-    play_button_disabled = False
+    # Enable play button if we have audio data and either:
+    # 1. We have current audio saved
+    # 2. We're in file mode
+    play_button_disabled = True
+    
+    # Check if we have current audio for playback
+    if audio_input.current_audio is not None:
+        print(f"Current audio available: {len(audio_input.current_audio)} samples, {len(audio_input.current_audio)/audio_input.sample_rate:.2f} seconds")
+        play_button_disabled = False
+    elif audio_input.file_mode:
+        play_button_disabled = False
+    else:
+        print("No audio available for playback")
     
     # Hide analyzing alert
     analyzing_alert_visible = False
     
-    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, play_button_disabled, analyzing_alert_visible, current_time
+    # Reset analysis needed flag and update the status text
+    status_text = f"Analysis complete. Detected genre: {genre} (Confidence: {confidence:.2f}%). Click Play Audio to listen."
+    
+    return genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, play_button_disabled, analyzing_alert_visible, current_time, False, status_text, analysis_results
 
 @callback(
     [Output("audio-playback-data", "data"),
@@ -298,18 +371,21 @@ def prepare_audio_playback(play_clicks, stop_clicks, current_playback_data):
     
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
     
-    # If stop button is clicked, save the current audio
+    # If stop button is clicked, we don't need to save the audio here
+    # as it's already saved in the toggle_recording callback
     if triggered_id == "stop-button":
-        audio_input.save_current_audio()
         return None, ""
     
     # If play button is clicked, get audio for playback
     if triggered_id == "play-button":
+        print("Play button clicked, retrieving audio...")
         playback_data = audio_input.get_audio_for_playback()
         if playback_data:
             info_text = f"Playing {playback_data['source']} ({playback_data['duration']:.2f} seconds)"
+            print(f"Playing back audio: {info_text}")
             return playback_data, info_text
         else:
+            print("No audio available for playback")
             return None, "No audio available for playback"
             
     return current_playback_data, ""
@@ -369,6 +445,51 @@ def display_component_details(rhythm_click, melody_click, instrumentation_click)
             return music_analyzer.get_component_details(component_type, click_data)
     
     return "Click on a visualization element to see details."
+
+@callback(
+    Output("play-button", "disabled", allow_duplicate=True),
+    [Input("stop-button", "n_clicks")],
+    prevent_initial_call=True
+)
+def enable_play_after_stop(n_clicks):
+    print("Stop button clicked, enabling play button")
+    # Check if audio is actually available
+    if audio_input.current_audio is not None:
+        print(f"Audio is available for playback: {len(audio_input.current_audio)} samples")
+        return False
+    else:
+        print("No audio available for playback after stopping")
+        return True
+
+@callback(
+    [Output("rhythm-graph", "figure", allow_duplicate=True),
+     Output("melody-graph", "figure", allow_duplicate=True),
+     Output("instrumentation-graph", "figure", allow_duplicate=True)],
+    [Input("analysis-results", "data")],
+    prevent_initial_call=True
+)
+def update_visualizations(analysis_results):
+    if not analysis_results or "components" not in analysis_results:
+        # Return empty figures if no data
+        return go.Figure(), go.Figure(), go.Figure()
+    
+    # Create visualizations from stored analysis results
+    components = analysis_results["components"]
+    rhythm_fig = create_rhythm_visualization(components.get('rhythm', {}))
+    melody_fig = create_melody_visualization(components.get('melody', {}))
+    instrumentation_fig = create_instrumentation_visualization(components.get('instrumentation', {}))
+    
+    print("Visualization graphs updated from analysis results")
+    return rhythm_fig, melody_fig, instrumentation_fig
+
+@callback(
+    Output("analysis-needed", "data", allow_duplicate=True),
+    [Input("stop-button", "n_clicks")],
+    prevent_initial_call=True
+)
+def stop_recording_and_analyze(n_clicks):
+    print("Stop button clicked - triggering analysis...")
+    return True
 
 if __name__ == "__main__":
     app.run(debug=True, port=8053) 
