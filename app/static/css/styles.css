@@ -356,12 +356,12 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .explanation-section {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.25);
     border-radius: 12px;
     padding: 20px;
     margin-bottom: 20px;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.4);
     transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
@@ -376,7 +376,12 @@ h1, h2, h3, h4, h5, h6 {
     margin-bottom: 15px;
     font-size: 1.3rem;
     font-weight: 600;
-    color: #fff;
+    color: #1a1a1a;
+    text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.9);
+    padding: 8px 12px;
+    border-radius: 8px;
+    backdrop-filter: blur(5px);
 }
 
 .section-icon {
@@ -390,8 +395,12 @@ h1, h2, h3, h4, h5, h6 {
     line-height: 1.7;
     margin-bottom: 12px;
     font-size: 1.05rem;
-    color: rgba(255, 255, 255, 0.95);
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    color: #1a1a1a;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 12px 15px;
+    border-radius: 6px;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(3px);
 }
 
 .technical-card {
