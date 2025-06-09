@@ -23,8 +23,8 @@ app = dash.Dash(__name__,
 server = app.server
 app.title = "Genra - Music Analysis & Genre Classification"  # Update the browser tab title too
 
-# Initialize audio input and analyzer
-audio_input = AudioInput(demo_mode_if_error=True)
+# Initialize audio input and analyzer with matching sample rates
+audio_input = AudioInput(sample_rate=22050, demo_mode_if_error=True)  # Match analyzer sample rate
 # Configure to use the original GenreClassifier with GTZAN weights
 music_analyzer = MusicAnalyzer(use_gtzan_model=True, sample_rate=audio_input.sample_rate) 
 
@@ -314,7 +314,8 @@ def process_uploaded_file(contents, filename):
     
     if success:
         alert_message = f"Analyzing file: {filename}"
-        return message, True, True, alert_message, True, True, False, True, True
+        # For file uploads, keep interval disabled but trigger analysis via analysis-needed flag
+        return message, True, True, alert_message, True, True, True, True, True
     else:
         return message, False, False, "", False, True, True, False, False
 
@@ -350,6 +351,8 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
     # First check if analysis is needed due to recording stop
     if triggered_id == "analysis-needed" and analysis_needed:
         print("Performing analysis after recording stopped")
+        # Small delay to ensure audio data is saved after recording stops
+        time.sleep(0.2)
         analyzing_alert_visible = True
     # Or if we're in file mode with interval updates
     elif triggered_id == "update-interval":
@@ -374,6 +377,8 @@ def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time,
     
     # Get latest audio data
     audio_data = audio_input.get_latest_data()
+    
+    print(f"DEBUG: audio_data type: {type(audio_data)}, length: {len(audio_data) if audio_data is not None else 'None'}")
     
     if audio_data is None or len(audio_data) == 0:
         empty_result = {

@@ -1,0 +1,8 @@
+#!/Users/lukeyeh/vscode_project/cursor/music_analyzer_app/music_analyzer_env/bin/python
+# -*- coding: UTF-8 -*-
+from __future__ import print_function, division, absolute_import
+
+from numba.misc.numba_entry import main
+
+if __name__ == "__main__":
+    main()

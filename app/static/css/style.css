@@ -296,3 +296,273 @@ body {
 * {
     will-change: transform, opacity;
 } 
+
+/* Enhanced LLM Explanation Styling */
+.llm-explanation-container {
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border-radius: 15px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    margin: 20px 0;
+    border: 1px solid #e9ecef;
+}
+
+.analysis-header-section {
+    background: linear-gradient(135deg, #343a40 0%, #495057 100%);
+    color: white;
+    padding: 20px 25px;
+    border-bottom: 3px solid #007bff;
+}
+
+.analysis-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.analysis-header {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    color: white;
+}
+
+.ai-indicator {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.analysis-content {
+    padding: 25px;
+}
+
+.analysis-section {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    margin-bottom: 20px;
+    border: 1px solid #f1f3f4;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.analysis-section:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+.analysis-section:last-child {
+    margin-bottom: 0;
+}
+
+.section-header {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding: 15px 20px;
+    border-bottom: 2px solid #dee2e6;
+    display: flex;
+    align-items: center;
+}
+
+.section-title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #343a40;
+}
+
+.section-content {
+    padding: 20px;
+    line-height: 1.7;
+}
+
+.analysis-paragraph {
+    margin-bottom: 15px;
+    color: #495057;
+    font-size: 1rem;
+    line-height: 1.7;
+}
+
+.analysis-paragraph:last-child {
+    margin-bottom: 0;
+}
+
+.analysis-highlight {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 15px 0;
+    border-left: 4px solid #ffc107;
+    font-weight: 500;
+}
+
+.analysis-list {
+    margin: 15px 0;
+    padding-left: 0;
+    list-style: none;
+}
+
+.analysis-bullet {
+    position: relative;
+    padding: 10px 15px 10px 35px;
+    margin-bottom: 8px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 3px solid #007bff;
+    color: #495057;
+    transition: all 0.2s ease;
+}
+
+.analysis-bullet:hover {
+    background: #e9ecef;
+    transform: translateX(5px);
+}
+
+.analysis-bullet::before {
+    content: "▶";
+    position: absolute;
+    left: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #007bff;
+    font-size: 0.8rem;
+}
+
+.analysis-bullet:last-child {
+    margin-bottom: 0;
+}
+
+/* Font Awesome Icons Support */
+.fas {
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+}
+
+/* Responsive Design for LLM Explanations */
+@media (max-width: 768px) {
+    .analysis-title-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .analysis-header {
+        font-size: 1.3rem;
+    }
+    
+    .analysis-content {
+        padding: 20px;
+    }
+    
+    .section-content {
+        padding: 15px;
+    }
+    
+    .analysis-bullet {
+        padding-left: 25px;
+    }
+    
+    .analysis-bullet::before {
+        left: 10px;
+    }
+}
+
+@media (max-width: 576px) {
+    .llm-explanation-container {
+        margin: 15px 0;
+        border-radius: 10px;
+    }
+    
+    .analysis-header-section {
+        padding: 15px 20px;
+    }
+    
+    .analysis-header {
+        font-size: 1.2rem;
+    }
+    
+    .analysis-content {
+        padding: 15px;
+    }
+    
+    .analysis-section {
+        margin-bottom: 15px;
+    }
+    
+    .section-header {
+        padding: 12px 15px;
+    }
+    
+    .section-content {
+        padding: 12px 15px;
+    }
+}
+
+/* Additional Styling for Instrument Details */
+.instrument-details-grid {
+    display: grid;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.confidence-badge {
+    display: inline-block;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Enhanced genre explanation card */
+#genre-explanation .llm-explanation-container {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Loading state for explanations */
+.explanation-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #6c757d;
+}
+
+.explanation-loading::before {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    margin-right: 10px;
+    border: 2px solid #6c757d;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+}
+
+/* Improved section spacing */
+.analysis-section + .analysis-section {
+    border-top: 1px solid #f1f3f4;
+}
+
+/* Better visual hierarchy */
+.section-header .fas {
+    width: 20px;
+    text-align: center;
+} 

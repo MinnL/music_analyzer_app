@@ -12,6 +12,8 @@ import hashlib
 from .models.high_confidence_classifier import HighConfidenceClassifier
 from dash import html
 from .models.instrument_detector import InstrumentDetector
+import threading
+import queue
 
 class MusicAnalyzer:
     """
@@ -162,6 +164,38 @@ class MusicAnalyzer:
         
         # Previous analysis results
         self.previous_analysis = None
+        
+        # LLM Configuration
+        self.llm_provider = "openai"  # Could be "openai", "anthropic", etc.
+        self.use_llm_explanations = True
+        self.openai_client = None
+        
+        # Setup LLM if available
+        self._setup_llm()
+    
+    def _setup_llm(self):
+        """Setup LLM configuration and API keys"""
+        try:
+            if self.llm_provider == "openai":
+                # Try to get API key from environment
+                api_key = os.getenv('OPENAI_API_KEY')
+                if not api_key:
+                    print("WARNING: OPENAI_API_KEY not found in environment. LLM explanations will be disabled.")
+                    self.use_llm_explanations = False
+                else:
+                    print("OpenAI API key found. LLM explanations enabled.")
+                    # For OpenAI 0.28.0, we just store the API key and set it globally
+                    try:
+                        import openai
+                        openai.api_key = api_key
+                        self.openai_client = {'api_key': api_key}  # Store for reference
+                    except ImportError:
+                        print("OpenAI library not found. LLM explanations will be disabled.")
+                        self.use_llm_explanations = False
+            # Add other providers here (Anthropic, local models, etc.)
+        except Exception as e:
+            print(f"Error setting up LLM: {e}")
+            self.use_llm_explanations = False
         
     def _load_or_init_model(self):
         """Load or initialize the appropriate genre classification model based on instance flags."""
@@ -680,6 +714,7 @@ class MusicAnalyzer:
     def get_genre_explanation(self, genre, components):
         """
         Get detailed explanation of why audio was classified as a specific genre
+        Uses LLM for dynamic explanations or falls back to hardcoded explanations
         
         Args:
             genre: The classified genre
@@ -688,86 +723,455 @@ class MusicAnalyzer:
         Returns:
             Explanation text formatted for Dash
         """
-        # If genre is not in our descriptions or not a valid genre, return basic message
-        if genre not in self.genre_descriptions:
-            return [
-                html.P([f"The audio was classified as ", html.Strong(genre), ", but detailed explanation is not available for this genre."])
-            ]
+        if self.use_llm_explanations:
+            try:
+                return self._get_llm_genre_explanation(genre, components)
+            except Exception as e:
+                print(f"LLM explanation failed: {e}. Falling back to hardcoded explanations.")
+                return self._get_hardcoded_genre_explanation(genre, components)
+        else:
+            return self._get_hardcoded_genre_explanation(genre, components)
+    
+    def _get_llm_genre_explanation(self, genre, components):
+        """Generate dynamic explanation using LLM"""
+        import os
         
-        # Get genre description
-        genre_info = self.genre_descriptions[genre]
+        print(f"🤖 Generating LLM explanation for {genre}...")
         
-        # Create basic explanation
-        explanation = [
-            html.H4(f"Why was this classified as {genre.capitalize()}?"),
-            html.P(genre_info['description']),
+        # Extract key features from components
+        features_summary = self._extract_features_for_llm(genre, components)
+        print(f"✅ Extracted features: {features_summary}")
+        
+        # Create prompt for LLM
+        prompt = self._create_explanation_prompt(genre, features_summary, components)
+        print(f"✅ Created prompt (length: {len(prompt)} chars)")
+        
+        # Get LLM response
+        if self.llm_provider == "openai":
+            import openai
             
-            html.H5("Key Characteristics:"),
-            html.Ul([
-                html.Li([html.Strong("Rhythm:"), f" {genre_info['rhythm']}"]),
-                html.Li([html.Strong("Melody:"), f" {genre_info['melody']}"]),
-                html.Li([html.Strong("Instrumentation:"), f" {genre_info['instrumentation']}"])
-            ])
-        ]
+            try:
+                # Set the API key from environment or use stored client
+                if 'OPENAI_API_KEY' in os.environ:
+                    openai.api_key = os.environ['OPENAI_API_KEY']
+                    print("✅ Using API key from environment")
+                elif self.openai_client and 'api_key' in self.openai_client:
+                    openai.api_key = self.openai_client['api_key']
+                    print("✅ Using stored API key")
+                else:
+                    raise Exception("OpenAI API key not found")
+                
+                # Add explicit timeout and retry configuration
+                import socket
+                
+                # Set socket timeout for DNS resolution
+                socket.setdefaulttimeout(30)
+                
+                print("🔄 Calling OpenAI API...")
+                response = openai.ChatCompletion.create(
+                    model="gpt-4o-mini",  # Better model - more capable and accurate
+                    messages=[
+                        {
+                            "role": "system", 
+                            "content": """You are Dr. Melody, an enthusiastic music professor and AI expert who makes complex musical concepts accessible and engaging. Your explanations are:
+- Educational but never boring
+- Technically accurate but approachable  
+- Structured with clear sections
+- Rich with musical insights and interesting facts
+- Tailored to help users understand both the 'what' and 'why' of genre classification
+
+Format your response with clear sections. Use markdown-style headers (##) for main sections like:
+## 🎼 What Makes [Genre] Music Special?
+## 🔍 The Analysis Breakdown
+## 💡 The "Aha!" Moment
+## 📊 Technical Insights
+
+Keep each section focused and engaging."""
+                        },
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=800,  # More space for detailed explanations
+                    temperature=0.8,  # More creative and engaging
+                    request_timeout=60  # 60 second timeout
+                )
+                print("✅ OpenAI API call successful!")
+            except Exception as api_error:
+                # Provide more detailed error information
+                error_msg = f"Error communicating with OpenAI: {api_error}"
+                print(f"❌ OpenAI API error: {error_msg}")
+                raise Exception(error_msg)
+            
+            explanation_text = response.choices[0].message.content.strip()
+            print(f"✅ Received explanation (length: {len(explanation_text)} chars)")
+            print(f"📝 First 200 chars: {explanation_text[:200]}...")
+        else:
+            raise Exception(f"LLM provider '{self.llm_provider}' not implemented")
         
-        # Add specific component matches if available
-        features_list = []
+        # Convert LLM response to well-structured HTML components
+        result = self._format_llm_explanation(genre, explanation_text, components)
+        print("✅ LLM explanation formatted successfully!")
+        return result
+    
+    def _extract_features_for_llm(self, genre, components):
+        """Extract and summarize key features for LLM prompt"""
+        features = []
         
+        # Rhythm features
         if 'rhythm' in components and components['rhythm']:
             rhythm = components['rhythm']
             tempo = rhythm.get('tempo', 0)
-            tempo_category = rhythm.get('tempo_category', 'Unknown')
             complexity = rhythm.get('complexity_category', 'Unknown')
-            
-            if genre == 'disco' and tempo >= 110 and tempo <= 130:
-                features_list.append(html.Li(f"Tempo of {tempo:.1f} BPM matches typical disco range (110-130 BPM)"))
-            elif genre == 'metal' and tempo >= 100:
-                features_list.append(html.Li(f"Faster tempo of {tempo:.1f} BPM aligns with metal's driving rhythms"))
-            elif genre == 'blues' and tempo >= 60 and tempo <= 100:
-                features_list.append(html.Li(f"Moderate tempo of {tempo:.1f} BPM is characteristic of blues"))
-            else:
-                features_list.append(html.Li(f"Tempo: {tempo:.1f} BPM ({tempo_category})"))
-                
-            features_list.append(html.Li(f"Rhythm complexity: {complexity}"))
-            
+            features.append(f"Tempo: {tempo:.1f} BPM")
+            features.append(f"Rhythm complexity: {complexity}")
+        
+        # Melody features
         if 'melody' in components and components['melody']:
             melody = components['melody']
             modality = melody.get('modality', 'Unknown')
             variety = melody.get('variety_category', 'Unknown')
-            dominant_notes = ', '.join(melody.get('dominant_notes', ['Unknown']))
-            
-            features_list.append(html.Li(f"Melodic key/mode: {modality}"))
-            
-            if genre == 'jazz' and variety == 'High':
-                features_list.append(html.Li("High pitch variety is typical of jazz's complex melodic structure"))
-            elif genre == 'pop' and variety == 'Medium':
-                features_list.append(html.Li("Medium pitch variety aligns with pop's accessible melodic approach"))
-            else:
-                features_list.append(html.Li(f"Pitch variety: {variety}"))
-                
-            features_list.append(html.Li(f"Dominant notes: {dominant_notes}"))
-            
+            features.append(f"Key/Mode: {modality}")
+            features.append(f"Pitch variety: {variety}")
+        
+        # Instrumentation features
         if 'instrumentation' in components and components['instrumentation']:
             instrumentation = components['instrumentation']
             brightness = instrumentation.get('brightness_category', 'Unknown')
             complexity = instrumentation.get('complexity_category', 'Unknown')
-            
-            if genre == 'metal' and brightness == 'Bright/Sharp':
-                features_list.append(html.Li("Bright/sharp timbre consistent with metal's distorted guitar sound"))
-            elif genre == 'classical' and complexity == 'Complex/Rich':
-                features_list.append(html.Li("Complex/rich timbral texture matches classical orchestration"))
-            else:
-                features_list.append(html.Li(f"Timbral brightness: {brightness}"))
-                features_list.append(html.Li(f"Timbral complexity: {complexity}"))
+            features.append(f"Timbral brightness: {brightness}")
+            features.append(f"Timbral complexity: {complexity}")
         
-        # Add detected features section if we have any features
-        if features_list:
-            explanation.extend([
-                html.H5("Detected Features:"),
-                html.Ul(features_list)
-            ])
+        # Detected instruments
+        if 'instruments' in components and components['instruments']:
+            instrument_names = [inst['name'] for inst in components['instruments']]
+            if instrument_names:
+                features.append(f"Detected instruments: {', '.join(instrument_names)}")
+        
+        return features
+    
+    def _create_explanation_prompt(self, genre, features_summary, components):
+        """Create a detailed, engaging prompt for the LLM"""
+        features_text = "\n".join([f"• {feature}" for feature in features_summary])
+        
+        # Get genre-specific context
+        genre_context = self._get_genre_context(genre)
+        
+        prompt = f"""You are analyzing a song classified as {genre.upper()} music in our web-based music analyzer app.
+
+**Audio Features Detected:**
+{features_text}
+
+**Instructions:** Create a web-friendly explanation that's engaging and educational for users of our interactive music analysis app. Use this exact structure:
+
+## 🎼 What Makes {genre.capitalize()} Special?
+Write 2-3 sentences about what defines {genre} music - its key characteristics, origins, and what makes it unique. Keep it accessible and interesting.
+
+## 🔍 Analysis Results
+Explain how the detected features (tempo, instruments, etc.) align with typical {genre} characteristics. Connect specific detected features to {genre} conventions in 2-3 sentences.
+
+## 💡 Cool Discovery
+Share one fascinating insight about this particular analysis - something that shows why AI classification is so interesting. What pattern made this clearly {genre}? 1-2 sentences.
+
+## 🎵 Musical Context
+Brief context about {genre} that relates to what was detected. {genre_context}. 1-2 sentences.
+
+**Style Guidelines:**
+- Write for web display - keep paragraphs short and scannable
+- Use enthusiastic but professional tone
+- Make technical concepts accessible 
+- Each section should be 1-3 sentences maximum
+- Focus on what makes this analysis interesting and educational"""
+        return prompt
+    
+    def _get_genre_context(self, genre):
+        """Get additional context for specific genres to enhance prompts"""
+        context_map = {
+            'classical': "Think orchestras, symphonies, complex harmonies, and centuries of musical tradition",
+            'jazz': "Think improvisation, swing rhythms, complex chord progressions, and musical conversation",
+            'rock': "Think electric guitars, driving rhythms, powerful vocals, and rebellious energy",
+            'pop': "Think catchy hooks, accessible melodies, polished production, and mass appeal",
+            'hiphop': "Think rhythmic speech, strong beats, sampling, and urban culture",
+            'country': "Think storytelling, acoustic guitars, rural themes, and American traditions",
+            'blues': "Think emotional expression, 12-bar progressions, call-and-response, and deep soul",
+            'reggae': "Think Jamaican rhythms, social consciousness, laid-back groove, and island vibes",
+            'metal': "Think power, distortion, complex compositions, and intense energy",
+            'disco': "Think dancefloor, four-on-the-floor beats, orchestral elements, and pure fun"
+        }
+        return context_map.get(genre, f"Think about the unique characteristics that define {genre} music")
+    
+    def _format_llm_explanation(self, genre, explanation_text, components):
+        """Format LLM response into well-structured HTML components with improved visualization"""
+        
+        print(f"🎨 Formatting LLM explanation...")
+        print(f"📄 Raw explanation text (first 300 chars): {explanation_text[:300]}...")
+        
+        # Parse the LLM response to extract different sections
+        sections = self._parse_llm_response(explanation_text)
+        print(f"📊 Parsed sections: {list(sections.keys())}")
+        
+        # Create a visually appealing layout
+        content = [
+            # Header with genre and AI indicator
+            html.Div([
+                html.Div([
+                    html.H4([
+                        html.I(className="fas fa-music", style={"marginRight": "8px", "color": "#007bff"}),
+                        f"AI Analysis: {genre.capitalize()} Music"
+                    ], className="analysis-header"),
+                    html.Span("🤖 Generated by AI", className="ai-indicator")
+                ], className="analysis-title-row")
+            ], className="analysis-header-section"),
             
-        return html.Div(explanation, className="genre-explanation")
+            # Main content sections
+            html.Div([
+                self._create_section_content(sections)
+            ], className="analysis-content")
+        ]
+        
+        result = html.Div(content, className="llm-explanation-container")
+        print(f"🏁 Created explanation HTML component: {type(result)}")
+        return result
+    
+    def _parse_llm_response(self, explanation_text):
+        """Parse LLM response into structured sections"""
+        sections = {}
+        
+        # Try to parse structured response
+        lines = explanation_text.split('\n')
+        current_section = None
+        current_content = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Check for section headers (markdown style)
+            if line.startswith('##') or line.startswith('#'):
+                # Save previous section
+                if current_section:
+                    sections[current_section] = '\n'.join(current_content).strip()
+                
+                # Start new section
+                current_section = line.lstrip('#').strip()
+                current_content = []
+            elif line.startswith('**') and line.endswith('**'):
+                # Bold headers
+                if current_section:
+                    sections[current_section] = '\n'.join(current_content).strip()
+                current_section = line.strip('*').strip()
+                current_content = []
+            else:
+                current_content.append(line)
+        
+        # Save last section
+        if current_section:
+            sections[current_section] = '\n'.join(current_content).strip()
+        
+        # If no structured sections found, use the full text
+        if not sections:
+            sections['Analysis'] = explanation_text
+            
+        return sections
+    
+    def _create_section_content(self, sections):
+        """Create visually appealing content sections"""
+        content_elements = []
+        
+        # Define section icons and colors
+        section_styling = {
+            'what makes': {'icon': 'fas fa-star', 'color': '#28a745'},
+            'analysis': {'icon': 'fas fa-chart-bar', 'color': '#007bff'},
+            'cool discovery': {'icon': 'fas fa-lightbulb', 'color': '#ffc107'},
+            'musical context': {'icon': 'fas fa-music', 'color': '#6c757d'},
+            'breakdown': {'icon': 'fas fa-search', 'color': '#17a2b8'}
+        }
+        
+        for section_title, section_content in sections.items():
+            if not section_content.strip():
+                continue
+                
+            # Find matching styling
+            styling = {'icon': 'fas fa-info-circle', 'color': '#6c757d'}
+            for key, style in section_styling.items():
+                if key in section_title.lower():
+                    styling = style
+                    break
+            
+            # Create section element with proper text formatting
+            formatted_text = self._format_section_text(section_content)
+            
+            section_element = html.Div([
+                # Section header
+                html.Div([
+                    html.I(className=styling['icon'], 
+                          style={"marginRight": "8px", "color": styling['color']}),
+                    html.H5(section_title, className="section-title")
+                ], className="section-header"),
+                
+                # Section content - ensure it's properly wrapped
+                html.Div(formatted_text, className="section-content")
+            ], className="analysis-section")
+            
+            content_elements.append(section_element)
+        
+        # Return a single container div with all sections
+        return html.Div(content_elements, className="sections-container")
+    
+    def _format_section_text(self, text):
+        """Format section text with better typography and structure"""
+        # Split into paragraphs
+        paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
+        
+        if not paragraphs:
+            return html.P("No content available.", className="analysis-paragraph")
+        
+        formatted_elements = []
+        list_items = []
+        
+        for paragraph in paragraphs:
+            # Check for bullet points
+            if paragraph.startswith('•') or paragraph.startswith('-'):
+                list_items.append(
+                    html.Li(paragraph.lstrip('•-').strip(), className="analysis-bullet")
+                )
+            elif paragraph.startswith('**') and paragraph.endswith('**'):
+                # Bold text
+                formatted_elements.append(
+                    html.P(html.Strong(paragraph.strip('*')), className="analysis-highlight")
+                )
+            else:
+                formatted_elements.append(
+                    html.P(paragraph, className="analysis-paragraph")
+                )
+        
+        # Add list items if any exist
+        if list_items:
+            formatted_elements.append(html.Ul(list_items, className="analysis-list"))
+        
+        # Return a single div containing all elements
+        if not formatted_elements:
+            return html.P("Content not available.", className="analysis-paragraph")
+        
+        return formatted_elements
+    
+    def _get_hardcoded_genre_explanation(self, genre, components):
+        """Fallback to well-formatted explanations with improved visualization"""
+        if genre not in self.genre_descriptions:
+            return html.Div([
+                html.Div([
+                    html.Div([
+                        html.H4([
+                            html.I(className="fas fa-music", style={"marginRight": "8px", "color": "#007bff"}),
+                            f"Analysis: {genre.capitalize()} Music"
+                        ], className="analysis-header"),
+                        html.Span("🎵 Genre Analysis", className="ai-indicator", style={"backgroundColor": "#007bff", "color": "white", "border": "1px solid #0056b3", "fontWeight": "bold"})
+                    ], className="analysis-title-row")
+                ], className="analysis-header-section"),
+                
+                html.Div([
+                    html.Div([
+                        html.Div([
+                            html.I(className="fas fa-search", style={"marginRight": "8px", "color": "#17a2b8"}),
+                            html.H5("Genre Classification", className="section-title")
+                        ], className="section-header"),
+                        html.Div([
+                            html.P(f"The audio was classified as {genre} music based on its audio characteristics.", 
+                                  className="analysis-paragraph"),
+                            html.P("This classification uses machine learning analysis of tempo, rhythm, melody, and instrumentation patterns.", 
+                                  className="analysis-paragraph")
+                        ], className="section-content")
+                    ], className="analysis-section")
+                ], className="analysis-content")
+            ], className="llm-explanation-container")
+        
+        # Get genre description
+        genre_info = self.genre_descriptions[genre]
+        description = genre_info['description']
+        
+        # Create structured content
+        content = [
+            # Header
+            html.Div([
+                html.Div([
+                    html.H4([
+                        html.I(className="fas fa-music", style={"marginRight": "8px", "color": "#007bff"}),
+                        f"Analysis: {genre.capitalize()} Music"
+                    ], className="analysis-header"),
+                    html.Span(f"🎼 {genre.capitalize()} Analysis", className="ai-indicator", style={"backgroundColor": "#17a2b8", "color": "white", "border": "1px solid #138496", "fontWeight": "bold"})
+                ], className="analysis-title-row")
+            ], className="analysis-header-section"),
+            
+            # Main content
+            html.Div([
+                # Genre Overview Section
+                html.Div([
+                    html.Div([
+                        html.I(className="fas fa-star", style={"marginRight": "8px", "color": "#28a745"}),
+                        html.H5(f"About {genre.capitalize()} Music", className="section-title")
+                    ], className="section-header"),
+                    html.Div([
+                        html.P(description, className="analysis-paragraph")
+                    ], className="section-content")
+                ], className="analysis-section"),
+                
+                # Analysis Details Section
+                html.Div([
+                    html.Div([
+                        html.I(className="fas fa-chart-bar", style={"marginRight": "8px", "color": "#007bff"}),
+                        html.H5("Audio Analysis Details", className="section-title")
+                    ], className="section-header"),
+                    html.Div([
+                        self._create_feature_summary(components)
+                    ], className="section-content")
+                ], className="analysis-section")
+            ], className="analysis-content")
+        ]
+        
+        return html.Div(content, className="llm-explanation-container")
+    
+    def _create_feature_summary(self, components):
+        """Create a formatted summary of detected audio features"""
+        features = []
+        
+        # Rhythm analysis
+        if 'rhythm' in components and components['rhythm']:
+            rhythm = components['rhythm']
+            tempo = rhythm.get('tempo', 0)
+            complexity = rhythm.get('complexity_category', 'Unknown')
+            if tempo > 0:
+                features.append(f"Tempo: {tempo:.1f} BPM ({rhythm.get('tempo_category', 'Unknown')} pace)")
+            if complexity != 'Unknown':
+                features.append(f"Rhythm complexity: {complexity}")
+        
+        # Melody analysis
+        if 'melody' in components and components['melody']:
+            melody = components['melody']
+            modality = melody.get('modality', 'Unknown')
+            variety = melody.get('variety_category', 'Unknown')
+            if modality != 'Unknown':
+                features.append(f"Musical mode: {modality}")
+            if variety != 'Unknown':
+                features.append(f"Melodic variety: {variety}")
+        
+        # Instrumentation analysis
+        if 'instrumentation' in components and components['instrumentation']:
+            instrumentation = components['instrumentation']
+            brightness = instrumentation.get('brightness_category', 'Unknown')
+            complexity = instrumentation.get('complexity_category', 'Unknown')
+            if brightness != 'Unknown':
+                features.append(f"Timbral character: {brightness}")
+            if complexity != 'Unknown':
+                features.append(f"Instrumental complexity: {complexity}")
+        
+        # Create feature list
+        if features:
+            feature_elements = [html.Li(feature, className="analysis-bullet") for feature in features]
+            return [
+                html.P("Key characteristics detected in this audio:", className="analysis-paragraph"),
+                html.Ul(feature_elements, className="analysis-list")
+            ]
+        else:
+            return [html.P("Audio analysis completed successfully.", className="analysis-paragraph")]
         
     def get_available_genres(self):
         """
