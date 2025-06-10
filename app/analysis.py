@@ -849,11 +849,18 @@ Keep each section focused and engaging."""
         return features
     
     def _create_explanation_prompt(self, genre, features_summary, components):
-        """Create a detailed, engaging prompt for the LLM"""
+        """Create a detailed, engaging prompt for the LLM with music recommendations"""
         features_text = "\n".join([f"• {feature}" for feature in features_summary])
         
         # Get genre-specific context
         genre_context = self._get_genre_context(genre)
+        
+        # Extract tempo for recommendations
+        tempo_info = "Unknown tempo"
+        for feature in features_summary:
+            if "Tempo:" in feature:
+                tempo_info = feature
+                break
         
         prompt = f"""You are analyzing a song classified as {genre.upper()} music in our web-based music analyzer app.
 
@@ -874,11 +881,18 @@ Share one fascinating insight about this particular analysis - something that sh
 ## 🎵 Musical Context
 Brief context about {genre} that relates to what was detected. {genre_context}. 1-2 sentences.
 
+## 🎯 Similar Music You Might Enjoy
+Based on the detected features ({tempo_info}, instruments, style), recommend 3-4 specific songs or artists that share similar characteristics to this analyzed audio. For each recommendation, briefly explain (1 sentence) why it matches - focusing on specific musical elements like tempo, instrumentation, or style. Format as:
+• **Artist - "Song Title"**: Brief reason why it matches the analyzed audio
+• **Artist - "Song Title"**: Brief reason why it matches the analyzed audio  
+• **Artist - "Song Title"**: Brief reason why it matches the analyzed audio
+
 **Style Guidelines:**
 - Write for web display - keep paragraphs short and scannable
 - Use enthusiastic but professional tone
 - Make technical concepts accessible 
 - Each section should be 1-3 sentences maximum
+- For recommendations, be specific with actual artist/song names from music history
 - Focus on what makes this analysis interesting and educational"""
         return prompt
     
@@ -983,6 +997,9 @@ Brief context about {genre} that relates to what was detected. {genre_context}. 
             'analysis': {'icon': 'fas fa-chart-bar', 'color': '#007bff'},
             'cool discovery': {'icon': 'fas fa-lightbulb', 'color': '#ffc107'},
             'musical context': {'icon': 'fas fa-music', 'color': '#6c757d'},
+            'similar music': {'icon': 'fas fa-headphones', 'color': '#e83e8c'},
+            'recommendations': {'icon': 'fas fa-heart', 'color': '#fd7e14'},
+            'you might enjoy': {'icon': 'fas fa-thumbs-up', 'color': '#20c997'},
             'breakdown': {'icon': 'fas fa-search', 'color': '#17a2b8'}
         }
         
@@ -1000,17 +1017,31 @@ Brief context about {genre} that relates to what was detected. {genre_context}. 
             # Create section element with proper text formatting
             formatted_text = self._format_section_text(section_content)
             
-            section_element = html.Div([
-                # Section header
-                html.Div([
-                    html.I(className=styling['icon'], 
-                          style={"marginRight": "8px", "color": styling['color']}),
-                    html.H5(section_title, className="section-title")
-                ], className="section-header"),
-                
-                # Section content - ensure it's properly wrapped
-                html.Div(formatted_text, className="section-content")
-            ], className="analysis-section")
+            # Special handling for music recommendations section
+            if 'similar music' in section_title.lower() or 'you might enjoy' in section_title.lower():
+                section_element = html.Div([
+                    # Special header for recommendations
+                    html.Div([
+                        html.I(className=styling['icon'], 
+                              style={"marginRight": "8px", "color": styling['color']}),
+                        html.H5(section_title, className="section-title")
+                    ], className="recommendations-header"),
+                    
+                    # Section content with music recommendations styling
+                    html.Div(formatted_text, className="section-content")
+                ], className="music-recommendations")
+            else:
+                section_element = html.Div([
+                    # Regular section header
+                    html.Div([
+                        html.I(className=styling['icon'], 
+                              style={"marginRight": "8px", "color": styling['color']}),
+                        html.H5(section_title, className="section-title")
+                    ], className="section-header"),
+                    
+                    # Section content - ensure it's properly wrapped
+                    html.Div(formatted_text, className="section-content")
+                ], className="analysis-section")
             
             content_elements.append(section_element)
         
@@ -1029,10 +1060,41 @@ Brief context about {genre} that relates to what was detected. {genre_context}. 
         list_items = []
         
         for paragraph in paragraphs:
-            # Check for bullet points
+            # Check for bullet points with enhanced music recommendations formatting
             if paragraph.startswith('•') or paragraph.startswith('-'):
+                # Parse music recommendations with special formatting
+                text_content = paragraph.lstrip('•-').strip()
+                
+                # Check if this is a music recommendation (contains **Artist - "Song"**)
+                if '**' in text_content and ' - "' in text_content and '"**:' in text_content:
+                    # Parse: **Artist - "Song Title"**: Reason
+                    parts = text_content.split('**:', 1)
+                    if len(parts) == 2:
+                        title_part = parts[0].strip('*').strip()
+                        reason_part = parts[1].strip()
+                        
+                        # Extract artist and song
+                        if ' - "' in title_part and title_part.endswith('"'):
+                            artist_song = title_part.split(' - "', 1)
+                            artist = artist_song[0].strip()
+                            song = artist_song[1].rstrip('"').strip()
+                            
+                            # Create enhanced music recommendation item
+                            recommendation_item = html.Div([
+                                html.Div([
+                                    html.Span(artist, className="recommendation-artist"),
+                                    html.Span(" - ", style={"color": "#2d3436", "font-weight": "500"}),
+                                    html.Span(f'"{song}"', className="recommendation-song")
+                                ], className="recommendation-title"),
+                                html.Div(reason_part, className="recommendation-reason")
+                            ], className="music-recommendation-item")
+                            
+                            formatted_elements.append(recommendation_item)
+                            continue
+                
+                # Default bullet point formatting
                 list_items.append(
-                    html.Li(paragraph.lstrip('•-').strip(), className="analysis-bullet")
+                    html.Li(text_content, className="analysis-bullet")
                 )
             elif paragraph.startswith('**') and paragraph.endswith('**'):
                 # Bold text
