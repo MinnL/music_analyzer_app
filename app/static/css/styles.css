@@ -513,98 +513,113 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Music Recommendations Styling */
 .music-recommendations {
-    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fecfef 100%);
-    border-radius: 15px;
-    padding: 20px;
-    margin: 15px 0;
-    box-shadow: 0 8px 32px rgba(255, 154, 158, 0.2);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 20px 0;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 .music-recommendation-item {
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 12px;
-    padding: 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 18px;
     margin: 12px 0;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     transition: all 0.3s ease;
-    border-left: 4px solid #e83e8c;
+    border-left: 3px solid #667eea;
     position: relative;
     overflow: hidden;
 }
 
 .music-recommendation-item:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-    border-left-color: #fd7e14;
+    background: rgba(255, 255, 255, 0.08);
+    border-left-color: #764ba2;
+    transform: translateX(4px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
 }
 
 .music-recommendation-item::before {
-    content: '🎵';
+    content: '♪';
     position: absolute;
-    top: 10px;
-    right: 15px;
-    font-size: 1.2em;
-    opacity: 0.6;
-    animation: musicNote 2s ease-in-out infinite;
+    top: 12px;
+    right: 16px;
+    font-size: 1.1em;
+    color: #667eea;
+    opacity: 0.5;
+    animation: musicNote 3s ease-in-out infinite;
 }
 
 .recommendation-title {
-    font-weight: 700;
-    color: #2d3436;
+    font-weight: 600;
+    color: #f8f9fa;
     font-size: 1.1rem;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 
 .recommendation-title::before {
     content: '▶';
-    color: #e83e8c;
-    font-size: 0.9em;
-    animation: pulse 2s infinite;
+    color: #667eea;
+    font-size: 0.8em;
+    opacity: 0.8;
+    animation: pulse 2.5s infinite;
 }
 
 .recommendation-artist {
-    color: #6c5ce7;
+    color: #667eea;
     font-weight: 600;
 }
 
 .recommendation-song {
-    color: #00b894;
+    color: #28a745;
     font-style: italic;
+    font-weight: 500;
 }
 
 .recommendation-reason {
-    color: #636e72;
-    font-size: 0.95rem;
-    line-height: 1.5;
-    margin-top: 8px;
-    padding-left: 20px;
-    border-left: 2px solid #ddd;
-    background: rgba(255, 255, 255, 0.5);
-    padding: 10px 15px;
-    border-radius: 6px;
+    color: #000000;
+    font-size: 1rem;
+    line-height: 1.6;
+    margin-top: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-left: 3px solid #667eea;
+    padding: 16px 20px;
+    border-radius: 8px;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.recommendation-reason:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-left-color: #764ba2;
+    box-shadow: 0 5px 16px rgba(0, 0, 0, 0.25);
 }
 
 .recommendations-header {
     display: flex;
     align-items: center;
     margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.4);
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .recommendations-header .section-title {
-    background: rgba(255, 255, 255, 0.95);
-    color: #2d3436;
-    font-size: 1.4rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+    font-size: 1.3rem;
     font-weight: 700;
-    padding: 10px 16px;
-    border-radius: 10px;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 /* Enhanced bullet point styling for better readability */
@@ -615,73 +630,73 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .analysis-bullet {
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 10px;
-    padding: 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 16px;
     margin: 10px 0;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
     transition: all 0.3s ease;
-    border-left: 4px solid #e83e8c;
+    border-left: 3px solid #667eea;
     position: relative;
 }
 
 .analysis-bullet:hover {
-    transform: translateX(5px);
-    box-shadow: 0 5px 18px rgba(0, 0, 0, 0.12);
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateX(4px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
 .analysis-bullet::before {
-    content: '🎶';
+    content: '♫';
     position: absolute;
-    left: -2px;
+    left: -10px;
     top: 50%;
     transform: translateY(-50%);
-    background: #e83e8c;
+    background: #667eea;
     color: white;
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.8em;
-    box-shadow: 0 2px 8px rgba(232, 62, 140, 0.3);
+    font-size: 0.7em;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 /* Animation for musical elements */
 @keyframes musicNote {
     0%, 100% {
         transform: translateY(0px) rotate(0deg);
-        opacity: 0.6;
+        opacity: 0.5;
     }
     50% {
-        transform: translateY(-3px) rotate(5deg);
-        opacity: 0.8;
+        transform: translateY(-2px) rotate(3deg);
+        opacity: 0.7;
     }
 }
 
 /* Responsive design for music recommendations */
 @media (max-width: 768px) {
     .music-recommendations {
-        padding: 15px;
-        margin: 10px 0;
+        padding: 18px;
+        margin: 15px 0;
     }
     
     .music-recommendation-item {
-        padding: 12px;
-        margin: 8px 0;
+        padding: 14px;
+        margin: 10px 0;
     }
     
     .recommendation-title {
         font-size: 1rem;
         flex-direction: column;
         align-items: flex-start;
-        gap: 4px;
+        gap: 6px;
     }
     
     .recommendations-header .section-title {
         font-size: 1.2rem;
-        padding: 8px 12px;
     }
 }
 
