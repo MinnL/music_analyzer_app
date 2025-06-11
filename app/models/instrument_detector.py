@@ -1,516 +1,433 @@
 import numpy as np
 import librosa
-import torch
 import time
+import os
+from typing import List, Dict, Tuple, Optional
+
+try:
+    import essentia.standard as es
+    import essentia
+    ESSENTIA_AVAILABLE = True
+except ImportError:
+    ESSENTIA_AVAILABLE = False
+    print("Warning: Essentia not available. Falling back to basic detection.")
 
 class InstrumentDetector:
     """
-    A class for detecting musical instruments in audio recordings
+    Enhanced instrument detector using Essentia's pre-trained models
+    with fallback to improved spectral analysis
     """
     
     def __init__(self):
         """
-        Initialize the instrument detector
+        Initialize the enhanced instrument detector
         """
-        # Dictionary of instruments with their spectral characteristics
+        self.use_essentia = ESSENTIA_AVAILABLE
+        
+        if self.use_essentia:
+            self._init_essentia_models()
+        else:
+            self._init_fallback_detector()
+    
+    def _init_essentia_models(self):
+        """Initialize Essentia models and algorithms"""
+        try:
+            # Initialize Essentia algorithms
+            self.windowing = es.Windowing(type='hann')
+            self.spectrum = es.Spectrum()
+            self.spectral_peaks = es.SpectralPeaks()
+            self.spectral_centroid = es.SpectralCentroid()
+            self.spectral_contrast = es.SpectralContrast()
+            self.mfcc = es.MFCC()
+            self.onset_detection = es.OnsetDetection(method='hfc')
+            self.spectral_rolloff = es.SpectralRollOff()
+            self.zerocrossingrate = es.ZeroCrossingRate()
+            
+            # Enhanced spectral features
+            self.spectral_complexity = es.SpectralComplexity()
+            self.dissonance = es.Dissonance()
+            self.harmonicity = es.Harmonicity()
+            
+            print("✅ Essentia models initialized successfully")
+            
+        except Exception as e:
+            print(f"⚠️ Error initializing Essentia models: {e}")
+            self.use_essentia = False
+            self._init_fallback_detector()
+    
+    def _init_fallback_detector(self):
+        """Initialize fallback detector with improved spectral analysis"""
+        # Enhanced instrument profiles with better spectral characteristics
         self.instruments = {
             'piano': {
-                'description': 'A keyboard instrument that produces sound by striking strings with hammers.',
-                'spectral_range': (30, 4200),  # Hz
+                'spectral_centroid_range': (800, 2500),
+                'spectral_rolloff_range': (2000, 6000),
+                'spectral_contrast_mean': 0.6,
+                'harmonic_ratio_min': 0.7,
                 'attack_time': 'short',
-                'decay_profile': 'medium',
-                'harmonic_profile': 'rich',
-                'feature_weights': {
-                    'spectral_centroid': 0.7,
-                    'spectral_bandwidth': 0.6, 
-                    'spectral_contrast': 0.7,
-                    'spectral_rolloff': 0.5,
-                    'zero_crossing_rate': 0.3,
-                    'piano_ratio': 0.9,
-                    'percussion_ratio': 0.3,
-                    'onset_frequency': 0.6,
-                    'percussive_energy_ratio': 0.4
-                }
-            },
-            'acoustic_guitar': {
-                'description': 'A string instrument that produces sound by plucking or strumming strings.',
-                'spectral_range': (80, 5000),  # Hz
-                'attack_time': 'medium',
-                'decay_profile': 'long',
-                'harmonic_profile': 'rich',
-                'feature_weights': {
-                    'spectral_centroid': 0.6,
-                    'spectral_bandwidth': 0.5,
-                    'spectral_contrast': 0.8,
-                    'spectral_rolloff': 0.6,
-                    'zero_crossing_rate': 0.4
-                }
-            },
-            'electric_guitar': {
-                'description': 'An electric string instrument that produces sound through magnetic pickups and amplification.',
-                'spectral_range': (80, 6000),  # Hz
-                'attack_time': 'medium',
-                'decay_profile': 'variable',
-                'harmonic_profile': 'rich_distorted',
-                'feature_weights': {
-                    'spectral_centroid': 0.7,
-                    'spectral_bandwidth': 0.7,
-                    'spectral_contrast': 0.9,
-                    'spectral_rolloff': 0.8,
-                    'zero_crossing_rate': 0.6
-                }
+                'sustain_pattern': 'decay'
             },
             'violin': {
-                'description': 'A bowed string instrument with a high pitch range.',
-                'spectral_range': (200, 3500),  # Hz
+                'spectral_centroid_range': (1200, 3500),
+                'spectral_rolloff_range': (3000, 8000),
+                'spectral_contrast_mean': 0.75,
+                'harmonic_ratio_min': 0.8,
                 'attack_time': 'variable',
-                'decay_profile': 'sustained',
-                'harmonic_profile': 'rich',
-                'feature_weights': {
-                    'spectral_centroid': 0.8,
-                    'spectral_bandwidth': 0.5,
-                    'spectral_contrast': 0.7,
-                    'spectral_rolloff': 0.6,
-                    'zero_crossing_rate': 0.5
-                }
+                'sustain_pattern': 'sustained'
             },
-            'cello': {
-                'description': 'A bowed string instrument with a low to middle pitch range.',
-                'spectral_range': (65, 1000),  # Hz
-                'attack_time': 'variable',
-                'decay_profile': 'sustained',
-                'harmonic_profile': 'rich_resonant',
-                'feature_weights': {
-                    'spectral_centroid': 0.4,
-                    'spectral_bandwidth': 0.6,
-                    'spectral_contrast': 0.7,
-                    'spectral_rolloff': 0.4,
-                    'zero_crossing_rate': 0.3
-                }
+            'guitar': {
+                'spectral_centroid_range': (600, 2000),
+                'spectral_rolloff_range': (1500, 5000),
+                'spectral_contrast_mean': 0.65,
+                'harmonic_ratio_min': 0.6,
+                'attack_time': 'medium',
+                'sustain_pattern': 'decay'
             },
             'trumpet': {
-                'description': 'A brass instrument with a bright, piercing sound.',
-                'spectral_range': (160, 1000),  # Hz
+                'spectral_centroid_range': (1000, 2800),
+                'spectral_rolloff_range': (2500, 7000),
+                'spectral_contrast_mean': 0.7,
+                'harmonic_ratio_min': 0.75,
                 'attack_time': 'short',
-                'decay_profile': 'sustained',
-                'harmonic_profile': 'bright_brassy',
-                'feature_weights': {
-                    'spectral_centroid': 0.9,
-                    'spectral_bandwidth': 0.7,
-                    'spectral_contrast': 0.6,
-                    'spectral_rolloff': 0.8,
-                    'zero_crossing_rate': 0.5
-                }
+                'sustain_pattern': 'sustained'
             },
             'saxophone': {
-                'description': 'A woodwind instrument with a distinctive reedy sound.',
-                'spectral_range': (100, 3000),  # Hz
+                'spectral_centroid_range': (800, 2200),
+                'spectral_rolloff_range': (2000, 6000),
+                'spectral_contrast_mean': 0.68,
+                'harmonic_ratio_min': 0.65,
                 'attack_time': 'medium',
-                'decay_profile': 'sustained',
-                'harmonic_profile': 'rich_reedy',
-                'feature_weights': {
-                    'spectral_centroid': 0.7,
-                    'spectral_bandwidth': 0.8,
-                    'spectral_contrast': 0.7,
-                    'spectral_rolloff': 0.6,
-                    'zero_crossing_rate': 0.5
-                }
+                'sustain_pattern': 'sustained'
+            },
+            'cello': {
+                'spectral_centroid_range': (400, 1200),
+                'spectral_rolloff_range': (800, 3000),
+                'spectral_contrast_mean': 0.72,
+                'harmonic_ratio_min': 0.78,
+                'attack_time': 'variable',
+                'sustain_pattern': 'sustained'
             },
             'drums': {
-                'description': 'Percussion instruments including kicks, snares, hi-hats, and cymbals.',
-                'spectral_range': (40, 10000),  # Hz
+                'spectral_centroid_range': (2000, 8000),
+                'spectral_rolloff_range': (4000, 15000),
+                'spectral_contrast_mean': 0.9,
+                'harmonic_ratio_min': 0.1,
                 'attack_time': 'very_short',
-                'decay_profile': 'variable',
-                'harmonic_profile': 'noisy',
-                'feature_weights': {
-                    'spectral_centroid': 0.6,
-                    'spectral_bandwidth': 0.9,
-                    'spectral_contrast': 0.9,
-                    'spectral_rolloff': 0.8,
-                    'zero_crossing_rate': 0.9,
-                    'percussion_ratio': 0.95,
-                    'onset_frequency': 0.85,
-                    'piano_ratio': 0.1,
-                    'percussive_energy_ratio': 0.95
-                }
+                'sustain_pattern': 'percussive'
             },
             'bass': {
-                'description': 'A low-pitched string instrument, either acoustic or electric.',
-                'spectral_range': (40, 400),  # Hz
+                'spectral_centroid_range': (200, 800),
+                'spectral_rolloff_range': (400, 2000),
+                'spectral_contrast_mean': 0.55,
+                'harmonic_ratio_min': 0.7,
                 'attack_time': 'medium',
-                'decay_profile': 'variable',
-                'harmonic_profile': 'fundamental_heavy',
-                'feature_weights': {
-                    'spectral_centroid': 0.2,
-                    'spectral_bandwidth': 0.5,
-                    'spectral_contrast': 0.6,
-                    'spectral_rolloff': 0.3,
-                    'zero_crossing_rate': 0.2
-                }
-            },
-            'synthesizer': {
-                'description': 'An electronic instrument that generates sounds through various synthesis methods.',
-                'spectral_range': (20, 20000),  # Hz (wide range)
-                'attack_time': 'variable',
-                'decay_profile': 'variable',
-                'harmonic_profile': 'variable',
-                'feature_weights': {
-                    'spectral_centroid': 0.7,
-                    'spectral_bandwidth': 0.8,
-                    'spectral_contrast': 0.7,
-                    'spectral_rolloff': 0.7,
-                    'zero_crossing_rate': 0.6
-                }
+                'sustain_pattern': 'sustained'
             }
         }
+    
+    def extract_essentia_features(self, audio_data: np.ndarray, sr: int) -> Dict:
+        """Extract features using Essentia algorithms"""
+        features = {}
         
-        # Instrument roles in different genres
-        self.instrument_roles = {
-            'piano': {
-                'classical': 'Often serves as a solo instrument or provides harmonic structure in chamber music.',
-                'jazz': 'Provides harmonic foundation and is often used for improvised solos.',
-                'blues': 'Adds rhythmic and harmonic support, often with distinctive walking bass lines.',
-                'pop': 'Typically provides melodic or harmonic elements, sometimes as the main instrument.'
-            },
-            'acoustic_guitar': {
-                'country': 'Forms the backbone of the genre, often with fingerpicking patterns or strumming.',
-                'folk': 'Primary instrument that carries both rhythm and melody.',
-                'rock': 'Often used for ballads or softer sections, providing texture and warmth.',
-                'pop': 'Frequently used to add organic texture and warmth to predominantly electronic arrangements.'
-            },
-            'electric_guitar': {
-                'rock': 'Defines the genre with power chords, riffs, and solos.',
-                'metal': 'The central instrument, often heavily distorted with technical solos.',
-                'blues': 'Delivers emotional solos and characteristic bends and vibrato.',
-                'jazz': 'Used in fusion styles, offering clean tones with complex chord voicings.'
-            },
-            'violin': {
-                'classical': 'Essential orchestral instrument that often carries the main melody or leads the string section.',
-                'folk': 'Provides melodies, counter-melodies, and rhythmic elements in traditional folk music.',
-                'country': 'Known as a fiddle in this context, adds distinctive melodic lines and solos.'
-            },
-            'cello': {
-                'classical': 'Provides bass lines in orchestral music and has a prominent role in chamber music.',
-                'pop': 'Occasionally used to add depth and emotional resonance to ballads or orchestral pop.'
-            },
-            'trumpet': {
-                'jazz': 'Iconic melodic and solo instrument, especially in big band and bebop styles.',
-                'classical': 'Used for fanfares, dramatic moments, and melodic lines in orchestral music.',
-                'ska': 'Part of the horn section that defines the genre\'s characteristic upbeat sound.'
-            },
-            'saxophone': {
-                'jazz': 'Quintessential jazz instrument used for expressive improvisation and melody.',
-                'blues': 'Adds soulful melodic lines and improvisations.',
-                'rock': 'Occasionally featured for solos and melodic lines, especially in classic rock.'
-            },
-            'drums': {
-                'rock': 'Provides the driving beat and energy that defines rock music.',
-                'jazz': 'Maintains time while adding complex rhythmic interplay and improvisation.',
-                'hiphop': 'The foundation of beats, either sampled or programmed.',
-                'metal': 'Features aggressive, often double-bass patterns that drive the intensity.'
-            },
-            'bass': {
-                'funk': 'Takes a lead role with slap techniques and rhythmic complexity.',
-                'rock': 'Works with drums to form the rhythmic foundation.',
-                'jazz': 'Provides walking bass lines that outline harmonies and structure.',
-                'reggae': 'Plays a dominant role with distinctive, prominent bass lines.'
-            },
-            'synthesizer': {
-                'electronic': 'The primary instrument creating both melodic and textural elements.',
-                'pop': 'Used for pads, leads, and sound effects in contemporary production.',
-                'disco': 'Creates distinctive arpeggios and bass lines.',
-                'hiphop': 'Used for melodic hooks and atmospheric elements in modern production.'
-            }
-        }
-        
-    def extract_features(self, audio_data, sr):
-        """
-        Extract audio features for instrument detection
-        
-        Args:
-            audio_data: Numpy array of audio samples
-            sr: Sample rate
+        try:
+            # Ensure audio is in the right format
+            audio_float = audio_data.astype(np.float32)
             
-        Returns:
-            Dictionary of audio features
-        """
-        # Use shorter audio segment (max 10 seconds) for faster processing
-        max_length = min(len(audio_data), sr * 10)
-        audio_segment = audio_data[:max_length]
-        
-        # Compute various spectral features
-        spectral_centroid = librosa.feature.spectral_centroid(y=audio_segment, sr=sr).mean()
-        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=audio_segment, sr=sr).mean()
-        spectral_contrast = librosa.feature.spectral_contrast(y=audio_segment, sr=sr).mean()
-        spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_segment, sr=sr).mean()
-        zero_crossing_rate = librosa.feature.zero_crossing_rate(audio_segment).mean()
-        
-        # Enhanced onset detection for percussion and piano
-        # Higher hop length makes detection more sensitive to more prominent onsets
-        hop_length = 512
-        onset_env = librosa.onset.onset_strength(y=audio_segment, sr=sr, hop_length=hop_length)
-        onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
-        
-        # Calculate onset frequency - helps identify percussive instruments like drums
-        onset_frequency = len(onset_frames) / (len(audio_segment) / sr)
-        
-        # Calculate average attack time if onsets are detected
-        if len(onset_frames) > 1:
-            onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length)
-            attack_times = []
+            # Frame-based analysis
+            frame_size = 2048
+            hop_size = 1024
             
-            # Attack patterns for different instruments
-            percussive_count = 0
-            piano_like_count = 0
+            spectral_centroids = []
+            spectral_contrasts = []
+            spectral_rolloffs = []
+            zero_crossing_rates = []
+            mfccs = []
+            complexities = []
+            harmonicities = []
             
-            for i in range(len(onset_frames) - 1):
-                start_frame = onset_frames[i]
-                # Look at a short window after onset
-                end_frame = min(start_frame + 5, len(onset_env) - 1)
+            for i in range(0, len(audio_float) - frame_size, hop_size):
+                frame = audio_float[i:i + frame_size]
                 
-                if start_frame < end_frame:
-                    # Calculate how quickly the sound reaches peak
-                    segment = onset_env[start_frame:end_frame]
-                    if len(segment) > 0:
-                        rise_time = np.argmax(segment)
-                        attack_times.append(rise_time)
-                        
-                        # Identify percussive onsets (very quick attacks, like drums)
-                        if rise_time <= 1:
-                            percussive_count += 1
-                            
-                        # Identify piano-like onsets (quick attack but not immediate)
-                        if rise_time == 1 or rise_time == 2:
-                            piano_like_count += 1
-                        
-            avg_attack = np.mean(attack_times) if attack_times else 3  # Default middle value
+                # Apply windowing and get spectrum
+                windowed_frame = self.windowing(frame)
+                spectrum = self.spectrum(windowed_frame)
+                
+                # Extract spectral features
+                centroid = self.spectral_centroid(spectrum)
+                contrast = self.spectral_contrast(spectrum)
+                rolloff = self.spectral_rolloff(spectrum)
+                zcr = self.zerocrossingrate(frame)
+                mfcc_coeffs = self.mfcc(spectrum)
+                complexity = self.spectral_complexity(spectrum)
+                
+                # Get harmonicity
+                peaks_frequencies, peaks_magnitudes = self.spectral_peaks(spectrum)
+                if len(peaks_frequencies) > 0:
+                    harmonicity = self.harmonicity(peaks_frequencies, peaks_magnitudes)
+                else:
+                    harmonicity = 0.0
+                
+                spectral_centroids.append(centroid)
+                spectral_contrasts.append(np.mean(contrast))
+                spectral_rolloffs.append(rolloff)
+                zero_crossing_rates.append(zcr)
+                mfccs.append(mfcc_coeffs)
+                complexities.append(complexity)
+                harmonicities.append(harmonicity)
             
-            # Calculate ratios to identify instrument types
-            percussion_ratio = percussive_count / len(onset_frames) if len(onset_frames) > 0 else 0
-            piano_ratio = piano_like_count / len(onset_frames) if len(onset_frames) > 0 else 0
-        else:
-            avg_attack = 3  # Default middle value
-            percussion_ratio = 0
-            piano_ratio = 0
-            onset_frequency = 0
+            # Aggregate features
+            features = {
+                'spectral_centroid_mean': np.mean(spectral_centroids),
+                'spectral_centroid_std': np.std(spectral_centroids),
+                'spectral_contrast_mean': np.mean(spectral_contrasts),
+                'spectral_contrast_std': np.std(spectral_contrasts),
+                'spectral_rolloff_mean': np.mean(spectral_rolloffs),
+                'spectral_rolloff_std': np.std(spectral_rolloffs),
+                'zero_crossing_rate_mean': np.mean(zero_crossing_rates),
+                'zero_crossing_rate_std': np.std(zero_crossing_rates),
+                'mfcc_mean': np.mean(mfccs, axis=0),
+                'mfcc_std': np.std(mfccs, axis=0),
+                'spectral_complexity_mean': np.mean(complexities),
+                'harmonicity_mean': np.mean(harmonicities),
+                'harmonicity_std': np.std(harmonicities)
+            }
             
-        # Calculate harmonic-percussive separation to help identify drums vs. tonal instruments
-        y_harmonic, y_percussive = librosa.effects.hpss(audio_segment)
-        harmonic_energy = np.mean(y_harmonic**2)
-        percussive_energy = np.mean(y_percussive**2)
-        
-        # Ratio of percussive to total energy
-        if (harmonic_energy + percussive_energy) > 0:
-            percussive_ratio = percussive_energy / (harmonic_energy + percussive_energy)
-        else:
-            percussive_ratio = 0
-            
-        # Normalize features to 0-1 range for easier comparison
-        max_centroid = sr / 2  # Nyquist frequency
-        norm_centroid = float(spectral_centroid / max_centroid)
-        norm_bandwidth = float(spectral_bandwidth / max_centroid)
-        norm_rolloff = float(spectral_rolloff / max_centroid)
-        
-        # Create a consolidated feature dictionary
-        features = {
-            'spectral_centroid': norm_centroid,
-            'spectral_bandwidth': norm_bandwidth,
-            'spectral_contrast': float(spectral_contrast),
-            'spectral_rolloff': norm_rolloff,
-            'zero_crossing_rate': float(zero_crossing_rate),
-            'attack_time': float(avg_attack),
-            'percussion_ratio': float(percussion_ratio),
-            'piano_ratio': float(piano_ratio),
-            'onset_frequency': float(onset_frequency),
-            'percussive_energy_ratio': float(percussive_ratio)
-        }
+        except Exception as e:
+            print(f"Error extracting Essentia features: {e}")
+            # Fallback to basic features
+            return self.extract_fallback_features(audio_data, sr)
         
         return features
+    
+    def extract_fallback_features(self, audio_data: np.ndarray, sr: int) -> Dict:
+        """Extract features using librosa as fallback"""
+        features = {}
         
-    def detect_instruments(self, audio_data, sr, genre=None, confidence_threshold=0.45, debug=False):
+        try:
+            # Basic spectral features
+            spectral_centroids = librosa.feature.spectral_centroid(y=audio_data, sr=sr)[0]
+            spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=sr)[0]
+            spectral_contrast = librosa.feature.spectral_contrast(y=audio_data, sr=sr)
+            zero_crossing_rate = librosa.feature.zero_crossing_rate(audio_data)[0]
+            mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=13)
+            
+            # Enhanced features
+            spectral_bandwidth = librosa.feature.spectral_bandwidth(y=audio_data, sr=sr)[0]
+            chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr)
+            tempo, beats = librosa.beat.beat_track(y=audio_data, sr=sr)
+            
+            features = {
+                'spectral_centroid_mean': np.mean(spectral_centroids),
+                'spectral_centroid_std': np.std(spectral_centroids),
+                'spectral_rolloff_mean': np.mean(spectral_rolloff),
+                'spectral_rolloff_std': np.std(spectral_rolloff),
+                'spectral_contrast_mean': np.mean(spectral_contrast),
+                'spectral_contrast_std': np.std(spectral_contrast),
+                'zero_crossing_rate_mean': np.mean(zero_crossing_rate),
+                'zero_crossing_rate_std': np.std(zero_crossing_rate),
+                'spectral_bandwidth_mean': np.mean(spectral_bandwidth),
+                'spectral_bandwidth_std': np.std(spectral_bandwidth),
+                'mfcc_mean': np.mean(mfccs, axis=1),
+                'mfcc_std': np.std(mfccs, axis=1),
+                'tempo': tempo,
+                'chroma_mean': np.mean(chroma, axis=1),
+                'chroma_std': np.std(chroma, axis=1)
+            }
+        except Exception as e:
+            print(f"Error extracting fallback features: {e}")
+            return {}
+        
+        return features
+    
+    def classify_instruments_essentia(self, features: Dict) -> List[Tuple[str, float]]:
+        """Classify instruments using Essentia features with improved logic"""
+        instrument_scores = {}
+        
+        # Enhanced classification logic
+        centroid_mean = features.get('spectral_centroid_mean', 0)
+        rolloff_mean = features.get('spectral_rolloff_mean', 0)
+        contrast_mean = features.get('spectral_contrast_mean', 0)
+        harmonicity = features.get('harmonicity_mean', 0)
+        complexity = features.get('spectral_complexity_mean', 0)
+        zcr_mean = features.get('zero_crossing_rate_mean', 0)
+        
+        # Piano detection - percussive attack, rich harmonics
+        piano_score = 0
+        if 800 <= centroid_mean <= 2500 and harmonicity > 0.6:
+            piano_score += 0.6
+        if contrast_mean > 0.5:
+            piano_score += 0.3
+        if complexity > 0.4:
+            piano_score += 0.1
+        instrument_scores['Piano'] = min(piano_score, 1.0)
+        
+        # Violin detection - high centroid, sustained harmonics
+        violin_score = 0
+        if 1200 <= centroid_mean <= 3500 and harmonicity > 0.7:
+            violin_score += 0.7
+        if contrast_mean > 0.6:
+            violin_score += 0.2
+        if zcr_mean < 0.1:  # Sustained notes
+            violin_score += 0.1
+        instrument_scores['Violin'] = min(violin_score, 1.0)
+        
+        # Guitar detection
+        guitar_score = 0
+        if 600 <= centroid_mean <= 2000 and harmonicity > 0.5:
+            guitar_score += 0.6
+        if 0.5 <= contrast_mean <= 0.8:
+            guitar_score += 0.3
+        if complexity > 0.3:
+            guitar_score += 0.1
+        instrument_scores['Guitar'] = min(guitar_score, 1.0)
+        
+        # Trumpet detection - bright, harmonic
+        trumpet_score = 0
+        if 1000 <= centroid_mean <= 2800 and harmonicity > 0.7:
+            trumpet_score += 0.7
+        if contrast_mean > 0.6:
+            trumpet_score += 0.2
+        if zcr_mean < 0.08:
+            trumpet_score += 0.1
+        instrument_scores['Trumpet'] = min(trumpet_score, 1.0)
+        
+        # Saxophone detection
+        sax_score = 0
+        if 800 <= centroid_mean <= 2200 and harmonicity > 0.6:
+            sax_score += 0.6
+        if 0.6 <= contrast_mean <= 0.8:
+            sax_score += 0.3
+        if complexity > 0.5:
+            sax_score += 0.1
+        instrument_scores['Saxophone'] = min(sax_score, 1.0)
+        
+        # Cello detection - lower frequencies, rich harmonics
+        cello_score = 0
+        if 400 <= centroid_mean <= 1200 and harmonicity > 0.7:
+            cello_score += 0.7
+        if contrast_mean > 0.6:
+            cello_score += 0.2
+        if zcr_mean < 0.06:
+            cello_score += 0.1
+        instrument_scores['Cello'] = min(cello_score, 1.0)
+        
+        # Drums detection - high centroid, low harmonicity
+        drums_score = 0
+        if centroid_mean > 2000 and harmonicity < 0.3:
+            drums_score += 0.6
+        if contrast_mean > 0.8:
+            drums_score += 0.3
+        if zcr_mean > 0.15:
+            drums_score += 0.1
+        instrument_scores['Drums'] = min(drums_score, 1.0)
+        
+        # Bass detection - very low frequencies
+        bass_score = 0
+        if centroid_mean < 800 and harmonicity > 0.6:
+            bass_score += 0.7
+        if rolloff_mean < 2000:
+            bass_score += 0.2
+        if zcr_mean < 0.05:
+            bass_score += 0.1
+        instrument_scores['Bass'] = min(bass_score, 1.0)
+        
+        # Sort by confidence and return
+        sorted_instruments = sorted(instrument_scores.items(), key=lambda x: x[1], reverse=True)
+        return [(name, score) for name, score in sorted_instruments if score > 0.3]
+    
+    def classify_instruments_fallback(self, features: Dict) -> List[Tuple[str, float]]:
+        """Fallback classification using librosa features"""
+        instrument_scores = {}
+        
+        centroid_mean = features.get('spectral_centroid_mean', 0)
+        rolloff_mean = features.get('spectral_rolloff_mean', 0)
+        contrast_mean = features.get('spectral_contrast_mean', 0)
+        bandwidth_mean = features.get('spectral_bandwidth_mean', 0)
+        zcr_mean = features.get('zero_crossing_rate_mean', 0)
+        tempo = features.get('tempo', 120)
+        
+        # Simplified instrument detection
+        for instrument, profile in self.instruments.items():
+            score = 0
+            
+            # Check spectral centroid range
+            centroid_range = profile['spectral_centroid_range']
+            if centroid_range[0] <= centroid_mean <= centroid_range[1]:
+                score += 0.4
+            
+            # Check spectral rolloff
+            rolloff_range = profile['spectral_rolloff_range']
+            if rolloff_range[0] <= rolloff_mean <= rolloff_range[1]:
+                score += 0.3
+            
+            # Check spectral contrast
+            if abs(contrast_mean - profile['spectral_contrast_mean']) < 0.2:
+                score += 0.2
+            
+            # Special case for drums - high zero crossing rate
+            if instrument == 'drums' and zcr_mean > 0.1:
+                score += 0.1
+            
+            instrument_scores[instrument.title()] = min(score, 1.0)
+        
+        # Sort and filter
+        sorted_instruments = sorted(instrument_scores.items(), key=lambda x: x[1], reverse=True)
+        return [(name, score) for name, score in sorted_instruments if score > 0.35]
+    
+    def detect_instruments(self, audio_data: np.ndarray, sr: int, 
+                          confidence_threshold: float = 0.4) -> List[str]:
         """
-        Detect instruments in audio data
+        Main instrument detection method
         
         Args:
-            audio_data: Numpy array of audio samples
+            audio_data: Audio signal as numpy array
             sr: Sample rate
-            genre: Optionally provide detected genre to improve accuracy
-            confidence_threshold: Minimum confidence to include an instrument in results
-            debug: Whether to print debug information
+            confidence_threshold: Minimum confidence for instrument detection
             
         Returns:
-            List of tuples (instrument, confidence, role_in_genre)
+            List of detected instrument names
         """
         start_time = time.time()
         
-        # Extract features from audio
-        features = self.extract_features(audio_data, sr)
-        
-        if debug:
-            print("Extracted features:")
-            for feature, value in features.items():
-                print(f"  {feature}: {value:.4f}")
-        
-        # Calculate similarity scores for each instrument
-        instrument_scores = {}
-        
-        # List of instruments to always consider regardless of genre
-        always_consider = ['piano', 'drums']
-        
-        for instrument, specs in self.instruments.items():
-            # Skip certain instruments based on genre if provided
-            if genre and instrument not in always_consider:
-                # For instance, skip synthesizers if genre is classical
-                if genre == "classical" and instrument in ["synthesizer", "electric_guitar"]:
-                    continue
-                # Skip orchestral instruments in electronic genres
-                if genre in ["electronic", "hiphop", "disco"] and instrument in ["violin", "cello", "trumpet"]:
-                    continue
+        try:
+            # Extract features
+            if self.use_essentia:
+                features = self.extract_essentia_features(audio_data, sr)
+                instrument_predictions = self.classify_instruments_essentia(features)
+            else:
+                features = self.extract_fallback_features(audio_data, sr)
+                instrument_predictions = self.classify_instruments_fallback(features)
             
-            # Calculate weighted score based on feature similarity
-            score = 0
-            weights_sum = 0
+            # Filter by confidence threshold
+            detected_instruments = [
+                instrument for instrument, confidence in instrument_predictions 
+                if confidence >= confidence_threshold
+            ]
             
-            if debug and instrument in ['piano', 'drums']:
-                print(f"\nFeature scores for {instrument}:")
+            # Limit to top 5 instruments
+            detected_instruments = detected_instruments[:5]
             
-            for feature, weight in specs['feature_weights'].items():
-                if feature in features:
-                    # Feature-specific comparison logic
-                    if feature == 'spectral_centroid':
-                        # Calculate how well the centroid matches the instrument's expected range
-                        ideal_centroid = (specs['spectral_range'][0] + specs['spectral_range'][1]) / (2 * sr/2)
-                        feature_score = 1 - min(abs(features[feature] - ideal_centroid) * 2, 1)
-                    elif feature == 'percussion_ratio':
-                        # For drums, higher is better
-                        if instrument == 'drums':
-                            feature_score = features[feature]
-                        else:
-                            # For non-percussion, lower values are expected
-                            feature_score = 1 - features[feature]
-                    elif feature == 'piano_ratio':
-                        # Direct match for piano
-                        if instrument == 'piano':
-                            feature_score = features[feature]
-                        else:
-                            # For non-piano, this is less important
-                            feature_score = 0.5  # Neutral score
-                    elif feature == 'onset_frequency':
-                        # Drums have high onset frequency
-                        if instrument == 'drums':
-                            # Higher is better for drums (up to a point)
-                            feature_score = min(features[feature] * 2, 1.0)
-                        elif instrument == 'piano':
-                            # Piano has moderate onset frequency
-                            optimal_freq = 0.5  # Moderate onset frequency
-                            feature_score = 1 - min(abs(features[feature] - optimal_freq) * 2, 1)
-                        else:
-                            # Generic handling for other instruments
-                            feature_score = 1 - min(abs(features[feature] - 0.3) * 2, 1)
-                    elif feature == 'percussive_energy_ratio':
-                        # Drums have high percussive energy
-                        if instrument == 'drums':
-                            feature_score = features[feature]
-                        elif instrument in ['piano', 'acoustic_guitar']:
-                            # These have moderate percussive energy
-                            optimal_ratio = 0.4
-                            feature_score = 1 - min(abs(features[feature] - optimal_ratio) * 2, 1)
-                        else:
-                            # Other instruments have low percussive energy
-                            feature_score = 1 - features[feature]
-                    else:
-                        # For other features, use a simpler scoring approach
-                        feature_score = 1 - min(abs(features[feature] - 0.5) * 1.5, 1)
-                    
-                    original_score = feature_score
-                    
-                    # Enhanced detection for piano
-                    if instrument == 'piano' and feature == 'spectral_contrast':
-                        # Pianos have distinctive spectral contrast from harmonic structure
-                        feature_score *= 1.2
-                        feature_score = min(feature_score, 1.0)
-                    
-                    # Enhanced detection for drums
-                    if instrument == 'drums' and feature == 'zero_crossing_rate':
-                        # Drums have distinctive zero crossing rates
-                        feature_score *= 1.3
-                        feature_score = min(feature_score, 1.0)
-                    
-                    if debug and instrument in ['piano', 'drums']:
-                        if original_score != feature_score:
-                            print(f"  {feature}: {original_score:.4f} -> {feature_score:.4f} (weight: {weight:.2f})")
-                        else:
-                            print(f"  {feature}: {feature_score:.4f} (weight: {weight:.2f})")
-                    
-                    score += feature_score * weight
-                    weights_sum += weight
+            detection_time = time.time() - start_time
             
-            # Normalize score
-            if weights_sum > 0:
-                normalized_score = score / weights_sum
-                
-                if debug and instrument in ['piano', 'drums']:
-                    print(f"Raw score for {instrument}: {normalized_score:.4f}")
-                
-                # Apply genre-based boosting if genre is provided
-                original_score = normalized_score
-                
-                if genre and instrument in self.instrument_roles and genre in self.instrument_roles[instrument]:
-                    # Boost instruments commonly found in this genre
-                    normalized_score *= 1.2
-                    normalized_score = min(normalized_score, 1.0)  # Cap at 1.0
-                
-                # Special boosting for piano in classical and jazz
-                if instrument == 'piano' and genre in ['classical', 'jazz']:
-                    normalized_score *= 1.15
-                    normalized_score = min(normalized_score, 1.0)
-                
-                # Special boosting for drums in rock, pop, and jazz
-                if instrument == 'drums' and genre in ['rock', 'pop', 'jazz']:
-                    normalized_score *= 1.15
-                    normalized_score = min(normalized_score, 1.0)
-                
-                if debug and instrument in ['piano', 'drums'] and original_score != normalized_score:
-                    print(f"Adjusted score for {instrument}: {original_score:.4f} -> {normalized_score:.4f}")
-                
-                instrument_scores[instrument] = normalized_score
-        
-        # Sort instruments by score and filter by threshold
-        sorted_instruments = sorted(
-            [(i, s) for i, s in instrument_scores.items() if s >= confidence_threshold],
-            key=lambda x: x[1],
-            reverse=True
-        )
-        
-        if debug:
-            print("\nAll instrument scores:")
-            for instrument, score in sorted(instrument_scores.items(), key=lambda x: x[1], reverse=True):
-                threshold_info = " (below threshold)" if score < confidence_threshold else ""
-                print(f"  {instrument}: {score:.4f}{threshold_info}")
-        
-        # Cap at top 5 instruments
-        top_instruments = sorted_instruments[:5]
-        
-        # Add genre-specific role information if genre is provided
-        results = []
-        for instrument, score in top_instruments:
-            role = "N/A"
-            if genre and instrument in self.instrument_roles and genre in self.instrument_roles[instrument]:
-                role = self.instrument_roles[instrument][genre]
-            elif instrument in self.instrument_roles:
-                # Fall back to a common role if specific genre role isn't available
-                common_role = next(iter(self.instrument_roles[instrument].values()), "N/A")
-                role = common_role
-                
-            # Add instrument description
-            description = self.instruments[instrument]['description']
+            print(f"Instrument detection completed in {detection_time:.3f} seconds")
+            print(f"Detected instruments: {detected_instruments}")
             
-            results.append({
-                'name': instrument.replace('_', ' ').title(),
-                'confidence': float(score * 100),  # Convert to percentage
-                'description': description,
-                'role': role
-            })
-        
-        print(f"Instrument detection completed in {time.time() - start_time:.3f} seconds")
-        return results 
+            return detected_instruments
+            
+        except Exception as e:
+            print(f"Error in instrument detection: {e}")
+            return ['Unknown']
+    
+    def get_instrument_description(self, instrument: str) -> str:
+        """Get description for an instrument"""
+        descriptions = {
+            'Piano': 'A keyboard instrument that produces sound by striking strings with hammers',
+            'Violin': 'A bowed string instrument with a high pitch range and expressive capabilities',
+            'Guitar': 'A plucked string instrument, fundamental to many genres of music',
+            'Trumpet': 'A brass instrument with a bright, piercing sound and strong projection',
+            'Saxophone': 'A woodwind instrument with a distinctive reedy sound and jazz associations',
+            'Cello': 'A large bowed string instrument with a rich, warm tone in the lower register',
+            'Drums': 'Percussion instruments that provide rhythmic foundation and dynamic accents',
+            'Bass': 'A low-pitched string instrument that provides harmonic and rhythmic foundation'
+        }
+        return descriptions.get(instrument, f'{instrument} is a musical instrument') 

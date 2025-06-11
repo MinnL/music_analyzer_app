@@ -345,120 +345,200 @@ def process_uploaded_file(contents, filename):
 )
 def update_analysis(n_intervals, analysis_needed, file_mode, last_analysis_time, 
                    prev_analysis_results, genres_open, debug_instruments):
-    ctx = dash.callback_context
-    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    
-    # First check if analysis is needed due to recording stop
-    if triggered_id == "analysis-needed" and analysis_needed:
-        print("Performing analysis after recording stopped")
-        # Small delay to ensure audio data is saved after recording stops
-        time.sleep(0.2)
-        analyzing_alert_visible = True
-    # Or if we're in file mode with interval updates
-    elif triggered_id == "update-interval":
-        if not file_mode:
-            return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
-                    dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
-                    dash.no_update, dash.no_update, dash.no_update, dash.no_update)
-    
-    # Only analyze if enough time has passed since last analysis (3 seconds minimum)
-        if time.time() - last_analysis_time < 3 and last_analysis_time > 0:
-        # Return previous state without updating
-            return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
-                    dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
-                    dash.no_update, dash.no_update, dash.no_update, dash.no_update)
-            
-        analyzing_alert_visible = True
-    else:
-        # No need to analyze
-        return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
-                dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
-                dash.no_update, dash.no_update, dash.no_update, dash.no_update)
-    
-    # Get latest audio data
-    audio_data = audio_input.get_latest_data()
-    
-    print(f"DEBUG: audio_data type: {type(audio_data)}, length: {len(audio_data) if audio_data is not None else 'None'}")
-    
-    if audio_data is None or len(audio_data) == 0:
-        empty_result = {
-            "genre": "No data",
-            "confidence": 0,
-            "components": {
-                "rhythm": {},
-                "melody": {},
-                "instrumentation": {},
-                "instruments": []  # Empty instruments list for initial state
-            }
-        }
-        # Get available genres information regardless of analysis
-        available_genres = music_analyzer.get_available_genres()
+    try:
+        ctx = dash.callback_context
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
         
-        return ("No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, time.time(), 
-                False, "No audio data to analyze", empty_result, "No analysis available", available_genres,
-                "No instrument data available")
-    
-    # Analyze audio
-    print(f"Analyzing {len(audio_data) / audio_input.sample_rate:.2f} seconds of audio...")
-    genre, confidence, components = music_analyzer.analyze(audio_data, debug_instruments=debug_instruments)
-    print(f"Analysis complete. Genre: {genre}, Confidence: {confidence:.2f}%")
-    
-    # Store the results for visualization
-    analysis_results = {
-        "genre": genre,
-        "confidence": confidence,
-        "components": components
-    }
-    
-    # Create visualizations
-    rhythm_fig = create_rhythm_visualization(components['rhythm'])
-    melody_fig = create_melody_visualization(components['melody'])
-    instrumentation_fig = create_instrumentation_visualization(components['instrumentation'])
-    
-    confidence_text = f"Confidence: {confidence:.2f}%"
-    
-    # Display source
-    if audio_input.file_mode:
-        genre_display = f"{genre} (File: {audio_input.file_info['filename']})"
-    elif audio_input.demo_mode:
-        genre_display = f"{genre} (Demo)"
-    else:
-        genre_display = genre
-    
-    # Enable play button if we have audio data and either:
-    # 1. We have current audio saved
-    # 2. We're in file mode
-    play_button_disabled = True
-    
-    # Check if we have current audio for playback
-    if audio_input.current_audio is not None:
-        print(f"Current audio available: {len(audio_input.current_audio)} samples, {len(audio_input.current_audio)/audio_input.sample_rate:.2f} seconds")
-        play_button_disabled = False
-    elif audio_input.file_mode:
-        play_button_disabled = False
-    else:
-        print("No audio available for playback")
+        # Default return values
+        def create_empty_result():
+            empty_result = {
+                "genre": "No data",
+                "confidence": 0,
+                "components": {
+                    "rhythm": {},
+                    "melody": {},
+                    "instrumentation": {},
+                    "instruments": []
+                }
+            }
+            # Get available genres information regardless of analysis
+            try:
+                available_genres = music_analyzer.get_available_genres()
+            except Exception as e:
+                print(f"Error getting available genres: {e}")
+                available_genres = "Unable to load genre information"
+            
+            return ("No data", "", go.Figure(), go.Figure(), go.Figure(), True, False, time.time(), 
+                    False, "No audio data to analyze", empty_result, "No analysis available", available_genres,
+                    "No instrument data available")
+        
+        # First check if analysis is needed due to recording stop
+        if triggered_id == "analysis-needed" and analysis_needed:
+            print("Performing analysis after recording stopped")
+            # Small delay to ensure audio data is saved after recording stops
+            time.sleep(0.1)  # Reduced from 0.2 to prevent hanging
+            analyzing_alert_visible = True
+        # Or if we're in file mode with interval updates
+        elif triggered_id == "update-interval":
+            if not file_mode:
+                return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
+                        dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
+                        dash.no_update, dash.no_update, dash.no_update, dash.no_update)
+        
+            # Only analyze if enough time has passed since last analysis (3 seconds minimum)
+            if last_analysis_time and time.time() - last_analysis_time < 3:
+                # Return previous state without updating
+                return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
+                        dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
+                        dash.no_update, dash.no_update, dash.no_update, dash.no_update)
+                
+            analyzing_alert_visible = True
+        else:
+            # No need to analyze
+            return (dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, 
+                    dash.no_update, dash.no_update, last_analysis_time, False, dash.no_update, 
+                    dash.no_update, dash.no_update, dash.no_update, dash.no_update)
+        
+        # Get latest audio data with timeout protection
+        try:
+            audio_data = audio_input.get_latest_data()
+        except Exception as e:
+            print(f"Error getting audio data: {e}")
+            return create_empty_result()
+        
+        print(f"DEBUG: audio_data type: {type(audio_data)}, length: {len(audio_data) if audio_data is not None else 'None'}")
+        
+        if audio_data is None or len(audio_data) == 0:
+            return create_empty_result()
+        
+        # Analyze audio with timeout protection
+        try:
+            print(f"Analyzing {len(audio_data) / audio_input.sample_rate:.2f} seconds of audio...")
+            
+            # Set debug_instruments to False to prevent potential issues
+            debug_mode = debug_instruments if debug_instruments is not None else False
+            
+            genre, confidence, components = music_analyzer.analyze(audio_data, debug_instruments=debug_mode)
+            print(f"Analysis complete. Genre: {genre}, Confidence: {confidence:.2f}%")
+            
+        except Exception as e:
+            print(f"Error during analysis: {e}")
+            # Return error state but still functional
+            error_result = {
+                "genre": "Analysis Error",
+                "confidence": 0,
+                "components": {
+                    "rhythm": {"tempo": 0, "complexity": "Unknown"},
+                    "melody": {"dominant_notes": [], "variety_category": "Unknown"},
+                    "instrumentation": {"brightness_category": "Unknown"},
+                    "instruments": []
+                }
+            }
+            try:
+                available_genres = music_analyzer.get_available_genres()
+            except:
+                available_genres = "Unable to load genre information"
+                
+            return ("Analysis Error", "Error occurred during analysis", 
+                    go.Figure(), go.Figure(), go.Figure(), True, False, time.time(), 
+                    False, f"Analysis failed: {str(e)}", error_result, 
+                    "Analysis failed. Please try again.", available_genres,
+                    "Analysis failed")
+        
+        # Store the results for visualization
+        analysis_results = {
+            "genre": genre,
+            "confidence": confidence,
+            "components": components
+        }
+        
+        # Create visualizations with error handling
+        try:
+            rhythm_fig = create_rhythm_visualization(components['rhythm'])
+            melody_fig = create_melody_visualization(components['melody'])
+            instrumentation_fig = create_instrumentation_visualization(components['instrumentation'])
+        except Exception as e:
+            print(f"Error creating visualizations: {e}")
+            rhythm_fig = go.Figure()
+            melody_fig = go.Figure()
+            instrumentation_fig = go.Figure()
+        
+        confidence_text = f"Confidence: {confidence:.2f}%"
+        
+        # Display source
+        try:
+            if audio_input.file_mode:
+                genre_display = f"{genre} (File: {audio_input.file_info.get('filename', 'Unknown')})"
+            elif audio_input.demo_mode:
+                genre_display = f"{genre} (Demo)"
+            else:
+                genre_display = genre
+        except Exception as e:
+            print(f"Error determining source: {e}")
+            genre_display = genre
+        
+        # Enable play button if we have audio data
         play_button_disabled = True
-    
-    # Hide analyzing alert
-    analyzing_alert_visible = False
-    
-    # Reset analysis needed flag and update the status text
-    status_text = f"Analysis complete. Detected genre: {genre} (Confidence: {confidence:.2f}%). Click Play Audio to listen."
-    
-    # Generate genre explanation
-    genre_explanation = music_analyzer.get_genre_explanation(genre, components)
-    
-    # Get available genres information
-    available_genres = music_analyzer.get_available_genres()
-    
-    # Get instrument details - new addition
-    instruments = components.get('instruments', [])
-    instrument_details = music_analyzer.get_instrument_details(instruments, genre)
-    
-    return (genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, 
-            play_button_disabled, analyzing_alert_visible, time.time(), False, status_text, 
-            analysis_results, genre_explanation, available_genres, instrument_details)
+        try:
+            if audio_input.current_audio is not None and len(audio_input.current_audio) > 0:
+                print(f"Current audio available: {len(audio_input.current_audio)} samples, {len(audio_input.current_audio)/audio_input.sample_rate:.2f} seconds")
+                play_button_disabled = False
+            elif audio_input.file_mode:
+                play_button_disabled = False
+            else:
+                print("No audio available for playback")
+                play_button_disabled = True
+        except Exception as e:
+            print(f"Error checking audio availability: {e}")
+            play_button_disabled = True
+        
+        # Hide analyzing alert
+        analyzing_alert_visible = False
+        
+        # Reset analysis needed flag and update the status text
+        status_text = f"Analysis complete. Detected genre: {genre} (Confidence: {confidence:.2f}%). Click Play Audio to listen."
+        
+        # Generate genre explanation with error handling
+        try:
+            genre_explanation = music_analyzer.get_genre_explanation(genre, components)
+        except Exception as e:
+            print(f"Error generating genre explanation: {e}")
+            genre_explanation = f"Unable to generate explanation for {genre}. Analysis completed successfully."
+        
+        # Get available genres information with error handling
+        try:
+            available_genres = music_analyzer.get_available_genres()
+        except Exception as e:
+            print(f"Error getting available genres: {e}")
+            available_genres = "Unable to load genre information"
+        
+        # Get instrument details with error handling
+        try:
+            instruments = components.get('instruments', [])
+            instrument_details = music_analyzer.get_instrument_details(instruments, genre)
+        except Exception as e:
+            print(f"Error getting instrument details: {e}")
+            instrument_details = f"Detected instruments: {', '.join(components.get('instruments', [])) if components.get('instruments') else 'None detected'}"
+        
+        print("Visualization graphs updated from analysis results")
+        
+        return (genre_display, confidence_text, rhythm_fig, melody_fig, instrumentation_fig, 
+                play_button_disabled, analyzing_alert_visible, time.time(), False, status_text, 
+                analysis_results, genre_explanation, available_genres, instrument_details)
+        
+    except Exception as e:
+        print(f"Critical error in update_analysis callback: {e}")
+        # Return safe fallback values
+        try:
+            available_genres = music_analyzer.get_available_genres()
+        except:
+            available_genres = "Unable to load genre information"
+            
+        return ("Error", "Critical error occurred", go.Figure(), go.Figure(), go.Figure(), 
+                True, False, time.time(), False, f"Critical error: {str(e)}", 
+                {"genre": "Error", "confidence": 0, "components": {}}, 
+                "A critical error occurred. Please refresh the page.", available_genres,
+                "Error occurred")
 
 @callback(
     [Output("audio-playback-data", "data"),

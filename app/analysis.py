@@ -11,9 +11,10 @@ import time
 import hashlib
 from .models.high_confidence_classifier import HighConfidenceClassifier
 from dash import html
-from .models.instrument_detector import InstrumentDetector
+from .models.essentia_instrument_detector import EssentiaInstrumentDetector
 import threading
 import queue
+import signal
 
 class MusicAnalyzer:
     """
@@ -45,8 +46,8 @@ class MusicAnalyzer:
         # Initialize genre classifier to None
         self.genre_classifier = None
         
-        # Initialize instrument detector
-        self.instrument_detector = InstrumentDetector()
+        # Initialize enhanced instrument detector
+        self.instrument_detector = EssentiaInstrumentDetector()
         
         # Initialize component descriptions (for UI details)
         self.component_descriptions = {
@@ -598,55 +599,122 @@ class MusicAnalyzer:
         Returns:
             Tuple of (genre, confidence, components)
         """
-        start_time = time.time()
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Analysis timeout")
         
-        # Use first 30 seconds of audio for full analysis if available
-        max_length = min(len(audio_data), self.sample_rate * 30)
-        audio_segment = audio_data[:max_length]
-        
-        # Check if complete analysis is in cache
-        audio_hash = hash(audio_segment.tobytes())
-        if audio_hash in self.analysis_cache and 'components' in self.analysis_cache[audio_hash] and not debug_instruments:
-            genre = self.analysis_cache[audio_hash]['genre']
-            confidence = self.analysis_cache[audio_hash]['confidence']
-            components = self.analysis_cache[audio_hash]['components']
-            # print(f"Using cached complete analysis ({time.time() - start_time:.3f}s)")
+        def analysis_worker():
+            """Worker function to run analysis with timeout protection"""
+            start_time = time.time()
+            
+            # Use first 30 seconds of audio for full analysis if available
+            max_length = min(len(audio_data), self.sample_rate * 30)
+            audio_segment = audio_data[:max_length]
+            
+            # Check if complete analysis is in cache
+            audio_hash = hash(audio_segment.tobytes())
+            if audio_hash in self.analysis_cache and 'components' in self.analysis_cache[audio_hash] and not debug_instruments:
+                genre = self.analysis_cache[audio_hash]['genre']
+                confidence = self.analysis_cache[audio_hash]['confidence']
+                components = self.analysis_cache[audio_hash]['components']
+                return genre, confidence, components
+            
+            # Extract features for component analysis
+            print("Extracting features from {:.2f} seconds of audio...".format(len(audio_segment) / self.sample_rate))
+            features = self.extract_features(audio_segment)
+            print("Feature extraction completed successfully")
+            
+            # Classify genre directly from audio data
+            genre, confidence = self.classify_genre(audio_segment)
+            
+            # Analyze components
+            components = self.analyze_components(features)
+            
+            # Detect instruments with timeout protection
+            print("Extracting instrument features...")
+            try:
+                # Limit instrument detection to prevent hanging
+                instruments = self.instrument_detector.detect_instruments(
+                    audio_segment[:min(len(audio_segment), self.sample_rate * 10)],  # Max 10 seconds for instrument detection
+                    self.sample_rate
+                )
+                components['instruments'] = instruments
+                print("Instrument feature extraction completed")
+            except Exception as e:
+                print(f"Instrument detection failed: {e}")
+                components['instruments'] = []
+            
+            # Cache the complete analysis
+            if audio_hash not in self.analysis_cache:
+                self.analysis_cache[audio_hash] = {}
+            self.analysis_cache[audio_hash]['genre'] = genre
+            self.analysis_cache[audio_hash]['confidence'] = confidence
+            self.analysis_cache[audio_hash]['components'] = components
+            
+            # Remove oldest entries if cache gets too large
+            if len(self.analysis_cache) > self.cache_size_limit:
+                oldest_key = next(iter(self.analysis_cache))
+                del self.analysis_cache[oldest_key]
+            
+            end_time = time.time()
+            print(f"Audio analysis completed in {end_time - start_time:.3f} seconds")
+            
             return genre, confidence, components
         
-        # Extract features for component analysis
-        features = self.extract_features(audio_segment)
-        
-        # Classify genre directly from audio data
-        genre, confidence = self.classify_genre(audio_segment)
-        
-        # Analyze components
-        components = self.analyze_components(features)
-        
-        # Detect instruments - new addition
-        instruments = self.instrument_detector.detect_instruments(
-            audio_segment, 
-            self.sample_rate, 
-            genre, 
-            debug=debug_instruments
-        )
-        components['instruments'] = instruments
-        
-        # Cache the complete analysis
-        if audio_hash not in self.analysis_cache:
-            self.analysis_cache[audio_hash] = {}
-        self.analysis_cache[audio_hash]['genre'] = genre
-        self.analysis_cache[audio_hash]['confidence'] = confidence
-        self.analysis_cache[audio_hash]['components'] = components
-        
-        # Remove oldest entries if cache gets too large
-        if len(self.analysis_cache) > self.cache_size_limit:
-            oldest_key = next(iter(self.analysis_cache))
-            del self.analysis_cache[oldest_key]
-        
-        end_time = time.time()
-        print(f"Audio analysis completed in {end_time - start_time:.3f} seconds")
-        
-        return genre, confidence, components
+        try:
+            # Run analysis with 30-second timeout
+            result = [None]
+            exception = [None]
+            
+            def run_analysis():
+                try:
+                    result[0] = analysis_worker()
+                except Exception as e:
+                    exception[0] = e
+            
+            analysis_thread = threading.Thread(target=run_analysis)
+            analysis_thread.daemon = True
+            analysis_thread.start()
+            analysis_thread.join(timeout=30)  # 30 second timeout
+            
+            if analysis_thread.is_alive():
+                print("Analysis timeout - returning basic classification")
+                # Force basic analysis without instrument detection
+                max_length = min(len(audio_data), self.sample_rate * 10)
+                audio_segment = audio_data[:max_length]
+                genre, confidence = self.classify_genre(audio_segment)
+                basic_components = {
+                    "rhythm": {"tempo": 0, "complexity": "Unknown"},
+                    "melody": {"dominant_notes": [], "variety_category": "Unknown"}, 
+                    "instrumentation": {"brightness_category": "Unknown"},
+                    "instruments": []
+                }
+                return genre, confidence, basic_components
+            
+            if exception[0]:
+                raise exception[0]
+                
+            if result[0]:
+                return result[0]
+            else:
+                raise Exception("Analysis failed to complete")
+                
+        except Exception as e:
+            print(f"Analysis error: {e}")
+            # Return basic fallback result
+            try:
+                max_length = min(len(audio_data), self.sample_rate * 10)
+                audio_segment = audio_data[:max_length]
+                genre, confidence = self.classify_genre(audio_segment)
+            except:
+                genre, confidence = "unknown", 0.0
+                
+            fallback_components = {
+                "rhythm": {"tempo": 0, "complexity": "Unknown"},
+                "melody": {"dominant_notes": [], "variety_category": "Unknown"},
+                "instrumentation": {"brightness_category": "Unknown"},
+                "instruments": []
+            }
+            return genre, confidence, fallback_components
         
     def get_component_details(self, component_type, click_data):
         """
@@ -842,7 +910,35 @@ Keep each section focused and engaging."""
         
         # Detected instruments
         if 'instruments' in components and components['instruments']:
-            instrument_names = [inst['name'] for inst in components['instruments']]
+            # Handle different formats of instrument data
+            instrument_names = []
+            instruments = components['instruments']
+            
+            # If instruments is a string, convert to list
+            if isinstance(instruments, str):
+                instruments = [instruments]
+            
+            # Extract instrument names based on data type
+            for inst in instruments:
+                if isinstance(inst, dict) and 'name' in inst:
+                    # Dictionary format with name key
+                    instrument_names.append(inst['name'])
+                elif isinstance(inst, str):
+                    # String format
+                    instrument_names.append(inst)
+                elif isinstance(inst, dict):
+                    # Dictionary without name key - try other keys
+                    for key in ['instrument', 'type', 'label']:
+                        if key in inst:
+                            instrument_names.append(inst[key])
+                            break
+                    else:
+                        # If no recognizable key, convert to string
+                        instrument_names.append(str(inst))
+            
+            # Filter out "Mixed Instrument" and empty strings
+            instrument_names = [name for name in instrument_names if name and name != "Mixed Instrument"]
+            
             if instrument_names:
                 features.append(f"Detected instruments: {', '.join(instrument_names)}")
         
@@ -1264,7 +1360,7 @@ Based on the detected features ({tempo_info}, instruments, style), recommend 3-4
         Format instrument detection results for display
         
         Args:
-            instruments: List of detected instruments with their properties
+            instruments: List of detected instruments (can be strings or dicts)
             genre: The detected genre
             
         Returns:
@@ -1274,28 +1370,70 @@ Based on the detected features ({tempo_info}, instruments, style), recommend 3-4
             return html.Div([
                 html.P("No instruments were confidently detected in this audio.")
             ], className="instrument-details")
-            
-        # Create content for each detected instrument
-        instrument_items = []
-        for instrument in instruments:
-            instrument_items.append(html.Div([
-                html.H5([
-                    instrument['name'], 
-                    html.Span(f" ({instrument['confidence']:.1f}%)", 
-                             className="confidence-score")
-                ]),
-                html.P(instrument['description']),
-                html.P([
-                    html.Strong("Role in music: "), 
-                    instrument['role']
-                ])
-            ], className="instrument-item"))
-            
-        # Assemble the complete content
-        content = [
-            html.H4(f"Detected Instruments in {genre.capitalize()}"),
-            html.P("The following instruments were identified in the audio recording:"),
-            html.Div(instrument_items, className="instrument-list")
-        ]
         
-        return html.Div(content, className="instrument-details") 
+        # Handle different data types for instruments
+        try:
+            # If instruments is a string, convert to list
+            if isinstance(instruments, str):
+                instruments = [instruments]
+            
+            # Create content for each detected instrument
+            instrument_items = []
+            for instrument in instruments:
+                # Handle dict format (proper instrument detection)
+                if isinstance(instrument, dict):
+                    name = instrument.get('name', 'Unknown Instrument')
+                    confidence = instrument.get('confidence', 0)
+                    description = instrument.get('description', 'No description available')
+                    role = instrument.get('role', 'Not specified')
+                    
+                    instrument_items.append(html.Div([
+                        html.H5([
+                            name, 
+                            html.Span(f" ({confidence:.1f}%)", 
+                                     className="confidence-score")
+                        ]),
+                        html.P(description),
+                        html.P([
+                            html.Strong("Role in music: "), 
+                            role
+                        ])
+                    ], className="instrument-item"))
+                
+                # Handle string format (simple instrument names)
+                elif isinstance(instrument, str):
+                    # Clean the instrument name
+                    name = instrument.strip()
+                    if name and name != "Mixed Instrument":
+                        instrument_items.append(html.Div([
+                            html.H5(name),
+                            html.P(f"Detected in the audio analysis for {genre} music.")
+                        ], className="instrument-item"))
+                    else:
+                        # Handle special case of "Mixed Instrument"
+                        instrument_items.append(html.Div([
+                            html.H5("Multiple Instruments"),
+                            html.P("The audio contains a mix of different instruments that couldn't be clearly separated.")
+                        ], className="instrument-item"))
+                
+            # If no valid instruments were processed, show fallback
+            if not instrument_items:
+                return html.Div([
+                    html.P("The audio analysis detected mixed instrumentation that couldn't be clearly identified.")
+                ], className="instrument-details")
+                
+            # Assemble the complete content
+            content = [
+                html.H4(f"Detected Instruments in {genre.capitalize()}"),
+                html.P("The following instruments were identified in the audio recording:"),
+                html.Div(instrument_items, className="instrument-list")
+            ]
+            
+            return html.Div(content, className="instrument-details")
+            
+        except Exception as e:
+            print(f"Error in get_instrument_details: {e}")
+            # Return safe fallback content
+            return html.Div([
+                html.P(f"Instrument detection completed for {genre} music.")
+            ], className="instrument-details") 

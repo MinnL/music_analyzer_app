@@ -10,4 +10,5 @@ dash==2.15.0
 dash-bootstrap-components==1.5.0
 soundfile==0.12.1
 openai>=1.0.0
-resampy==0.4.3 
+resampy==0.4.3
+essentia-tensorflow>=2.1b6 
